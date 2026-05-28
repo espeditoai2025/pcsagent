@@ -1,29 +1,54 @@
 import { AgentState } from "../state";
 import { routerModel } from "../services/llm";
-import { SystemMessage, HumanMessage } from "@langchain/core/messages";
+import { SystemMessage } from "@langchain/core/messages";
 import { z } from "zod";
 
-// Definiamo uno schema per il JSON in output del supervisor
 const routerSchema = z.object({
   next: z.enum(["coder", "searcher", "image_gen", "retriever", "pdf_maker", "finish"]),
-  instructions: z.string().describe("Istruzioni specifiche per il nodo successivo"),
+  instructions: z.string().describe("Istruzioni dettagliate e specifiche per il nodo successivo"),
 });
 
 export const supervisorNode = async (state: AgentState): Promise<Partial<AgentState>> => {
-  const systemPrompt = `Sei il Supervisor di un Agente AI Multi-Modello.
-Il tuo compito è analizzare la richiesta dell'utente e decidere quale strumento chiamare:
-- 'coder': per scrivere o eseguire script Python. È LA TUA ARMA PRINCIPALE. Usalo sempre per compiere azioni, calcoli complessi, creare file generici, script, automazioni, o scaricare strumenti mancanti. NON ARRENDERTI MAI: se l'utente chiede qualcosa di complesso, usa il coder per costruire la soluzione.
-- 'pdf_maker': SE L'UTENTE RICHIEDE LA GENERAZIONE DI UN DOCUMENTO, REPORT, PREVENTIVO O FATTURA IN PDF. Questo nodo usa i dati aziendali dell'utente per generare un PDF professionale. Non usare 'coder' per i PDF.
-- 'searcher': per ricerche web profonde su dati attuali.
-- 'image_gen': per generare o manipolare immagini.
-- 'retriever': se l'utente ti chiede informazioni su documenti (PDF, CSV, ecc.) della sessione.
-- 'finish': SOLO se la richiesta è un semplice saluto, una conversazione discorsiva o se il task è già stato completato con successo. Altrimenti, NON usare finish finché il problema non è risolto. IN QUESTO CASO, SCRIVI DIRETTAMENTE LA TUA RISPOSTA FINALE COMPLETA per l'utente nel campo 'instructions'.
+  const systemPrompt = `Sei il Supervisor di un Agente AI autonomo. Analizza la richiesta dell'utente e scegli lo strumento corretto.
 
-Rispondi SOLO in formato JSON valido, aderente al seguente schema:
-{
-  "next": "coder" | "searcher" | "image_gen" | "retriever" | "pdf_maker" | "finish",
-  "instructions": "string"
-}`;
+=== STRUMENTI DISPONIBILI ===
+
+🐍 'coder' — STRUMENTO PRINCIPALE. Esegue Python in un container Docker con accesso internet completo.
+   USA per:
+   - Qualsiasi automazione, calcolo, elaborazione dati
+   - Analisi di file (CSV, Excel, PDF) e generazione di report dati
+   - Scraping web, chiamate API, download file
+   - PDF CON DATI DINAMICI: analisi dati + grafici + weasyprint/Playwright → PDF professionale
+   - Grafici matplotlib/seaborn da salvare come PNG o PDF
+   - Qualsiasi task che richiede logica Python
+   USA 'coder' per PDF quando: l'utente vuole analizzare dati, creare grafici, o il PDF richiede elaborazione computazionale.
+
+📄 'pdf_maker' — Generatore documenti aziendali template-based.
+   USA per:
+   - Fatture, preventivi, offerte commerciali, contratti
+   - Report formali, proposte aziendali
+   - Qualsiasi documento che usa i DATI AZIENDALI dell'utente (logo, P.IVA, indirizzo)
+   NON usare per PDF che richiedono calcoli su dati o grafici → usa 'coder' in quel caso.
+
+🔍 'searcher' — Ricerca web in tempo reale.
+   USA per: notizie recenti, prezzi attuali, informazioni aggiornate non presenti nel training.
+
+🖼️ 'image_gen' — Generazione immagini AI.
+   USA per: creare immagini, illustrazioni, loghi, mockup da testo.
+
+📚 'retriever' — Ricerca nei documenti caricati dall'utente.
+   USA per: "nel documento che ti ho mandato...", "nel PDF/CSV/file che ho allegato..."
+
+💬 'finish' — Risposta diretta senza tool.
+   USA SOLO per: saluti, domande generali di conversazione, domande a cui puoi rispondere direttamente.
+   In questo caso scrivi la risposta completa nel campo 'instructions'.
+
+=== REGOLA FONDAMENTALE ===
+NON dire mai "non posso farlo". Se la richiesta è complessa, usa 'coder' — il container Python può fare quasi tutto.
+Nelle 'instructions' spiega ESATTAMENTE cosa il nodo deve fare, includendo dettagli tecnici rilevanti.
+
+Rispondi SOLO in JSON valido:
+{ "next": "...", "instructions": "..." }`;
 
   const messages = [
     new SystemMessage(systemPrompt),
@@ -33,21 +58,19 @@ Rispondi SOLO in formato JSON valido, aderente al seguente schema:
   const response = await routerModel.withStructuredOutput(routerSchema).invoke(messages);
 
   return {
-    // Aggiungiamo un messaggio AI invisibile all'utente ma utile per il routing
     messages: [new SystemMessage(`Supervisor Decision: ROUTE TO ${response.next}\nInstructions: ${response.instructions}`)],
   };
 };
 
-// Funzione helper per l'arco condizionale
 export const routerEdge = (state: AgentState): string => {
   const lastMessage = state.messages[state.messages.length - 1];
   const content = lastMessage.content as string;
-  
+
   if (content.includes("ROUTE TO coder")) return "coder";
   if (content.includes("ROUTE TO searcher")) return "searcher";
   if (content.includes("ROUTE TO image_gen")) return "image_gen";
   if (content.includes("ROUTE TO retriever")) return "retriever";
   if (content.includes("ROUTE TO pdf_maker")) return "pdf_maker";
-  
+
   return "finish";
 };

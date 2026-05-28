@@ -10,75 +10,88 @@ datasource db {
 }
 
 model User {
-  id            String          @id @default(uuid())
-  email         String          @unique
-  password      String?
-  firstName     String?
-  lastName      String?
-  phone         String?
-  street        String?
-  city          String?
-  zipCode       String?
-  companyName   String?
-  vatNumber     String?
+  id             String          @id @default(uuid())
+  email          String          @unique
+  password       String?
+  firstName      String?
+  lastName       String?
+  phone          String?
+  street         String?
+  city           String?
+  zipCode        String?
+  companyName    String?
+  vatNumber      String?
   companyLogoUrl String?
-  website       String?
-  createdAt     DateTime        @default(now())
-  updatedAt     DateTime        @updatedAt
-  agents        AgentInstance[]
-  sessions      ChatSession[]
+  website        String?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  agents         AgentInstance[]
+  sessions       ChatSession[]
 }
 
 model AgentInstance {
-  id            String          @id @default(uuid())
-  name          String
-  systemPrompt  String?
-  userId        String
-  user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
-  sessions      ChatSession[]
-  createdAt     DateTime        @default(now())
-  updatedAt     DateTime        @updatedAt
+  id           String        @id @default(uuid())
+  name         String
+  systemPrompt String?
+  userId       String
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sessions     ChatSession[]
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  @@index([userId])
 }
 
 model ChatSession {
-  id            String          @id @default(uuid())
-  title         String?
-  agentId       String
-  agent         AgentInstance   @relation(fields: [agentId], references: [id], onDelete: Cascade)
-  userId        String
-  user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
-  messages      ChatMessage[]
-  createdAt     DateTime        @default(now())
-  updatedAt     DateTime        @updatedAt
+  id        String        @id @default(uuid())
+  title     String?
+  agentId   String
+  agent     AgentInstance @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages  ChatMessage[]
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  @@index([userId])
+  @@index([agentId])
+  @@index([createdAt])
 }
 
 model ChatMessage {
-  id            String          @id @default(uuid())
-  sessionId     String
-  session       ChatSession     @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  role          String          // 'user' | 'agent' | 'system'
-  content       String
-  documents     Document[]      // Allegati (PDF, Immagini generate, CSV)
-  createdAt     DateTime        @default(now())
+  id        String     @id @default(uuid())
+  sessionId String
+  session   ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  role      String
+  content   String
+  documents Document[]
+  createdAt DateTime   @default(now())
+
+  @@index([sessionId])
+  @@index([sessionId, createdAt])
 }
 
 model Document {
-  id            String          @id @default(uuid())
-  messageId     String
-  message       ChatMessage     @relation(fields: [messageId], references: [id], onDelete: Cascade)
-  filename      String
-  filepath      String          // Percorso su disco della VPS
-  fileType      String          // MIME type o estensione
-  sizeBytes     Int?
-  createdAt     DateTime        @default(now())
-  chunks        DocumentChunk[]
+  id        String          @id @default(uuid())
+  messageId String
+  message   ChatMessage     @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  filename  String
+  filepath  String
+  fileType  String
+  sizeBytes Int?
+  createdAt DateTime        @default(now())
+  chunks    DocumentChunk[]
+
+  @@index([messageId])
 }
 
 model DocumentChunk {
-  id            String          @id @default(uuid())
-  documentId    String
-  document      Document        @relation(fields: [documentId], references: [id], onDelete: Cascade)
-  content       String          // Testo del chunk
-  embedding     Unsupported("vector(1536)")? // OpenRouter embeddings / OpenAI
-  createdAt     DateTime        @default(now())
+  id         String   @id @default(uuid())
+  documentId String
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  content    String
+  embedding  Unsupported("vector(1536)")?
+  createdAt  DateTime @default(now())
+
+  @@index([documentId])
 }

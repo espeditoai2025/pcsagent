@@ -3,27 +3,112 @@ import { coderModel } from "../services/llm";
 import { SystemMessage, HumanMessage } from "@langchain/core/messages";
 
 export const coderNode = async (state: AgentState): Promise<Partial<AgentState>> => {
-  let prompt = `Sei un esperto sviluppatore Python. Devi scrivere uno script Python che risolva la richiesta dell'utente in modo definitivo e autonomo.
-Regole fondamentali:
-1. L'ambiente è un container Docker minimale basato su python:3.11-slim. HAI ACCESSO COMPLETO A INTERNET.
-2. SE TI MANCA QUALUNQUE LIBRERIA, STRUMENTO O DIPENDENZA (es. librerie Python, wget, curl, dipendenze di sistema), DEVI SCARICARLO E INSTALLARLO direttamente dal tuo script Python. NON ARRENDERTI MAI.
-   Esempio per installare pacchetti Python silenziosamente:
-   \`\`\`python
-   import subprocess, sys
-   subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", "requests", "reportlab", "pandas", "matplotlib"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-   \`\`\`
-   Se serve scaricare un file o un tool binario, usa il modulo 'urllib.request' o 'requests' per costruirlo al volo o scaricarlo.
-3. I file generati (es. PDF, immagini, CSV, TXT) DEVONO essere salvati nella cartella \`/app/data/\`. I contenuti testuali all'interno dei file DEVONO essere in italiano, usando l'Euro come valuta di default.
-4. Al termine del tuo script, fai \`print()\` di un **messaggio discorsivo e amichevole in italiano (stile ChatGPT)** che riassume i risultati. L'utente leggerà direttamente questo \`print()\`. Se hai creato un file, includi alla fine la dicitura esatta \`[File Generato: nome_file.est]\`. NESSUN LOG TECNICO, solo una risposta elegante in Markdown.
-5. Ritorna SOLO il codice Python. Non aggiungere blocchi Markdown \`\`\`python o spiegazioni testuali. Il tuo output sarà eseguito direttamente. Se fallisci, dovrai ritentare fino al successo. Non dire mai "non posso farlo", costruisci una soluzione alternativa in Python!`;
+  // Dati aziendali dell'utente (per carta intestata nei PDF)
+  const u = state.userData || {};
+  const nomeCompleto = [u.firstName, u.lastName].filter(Boolean).join(" ") || "";
+  const indirizzo = [u.street, u.city, u.zipCode].filter(Boolean).join(", ") || "";
+  const hasCompanyData = !!(u.companyName || nomeCompleto);
+
+  const companyBlock = hasCompanyData ? `
+=== DATI AZIENDALI UTENTE (usa per carta intestata) ===
+Nome/Intestatario: ${nomeCompleto}
+Azienda: ${u.companyName || ""}
+P.IVA: ${u.vatNumber || ""}
+Indirizzo: ${indirizzo}
+Telefono: ${u.phone || ""}
+Email: ${u.email || ""}
+Sito Web: ${u.website || ""}
+Logo URL: ${u.companyLogoUrl || ""}
+Quando generi documenti PDF (fatture, preventivi, report), usa questi dati per l'intestazione professionale.
+Se è disponibile il Logo URL, incorporalo nell'HTML come: <img src="LOGO_URL" style="height:55px; object-fit:contain">
+` : "";
+
+  let prompt = `Sei un esperto sviluppatore Python autonomo. Scrivi script Python completi che risolvono la richiesta in modo definitivo.
+${companyBlock}
+
+=== AMBIENTE ===
+Container Docker pcsai-python con queste librerie GIÀ INSTALLATE (NO pip install necessario):
+  Dati:       pandas, numpy, scipy, scikit-learn, openpyxl, sqlalchemy, psycopg2-binary
+  Web:        requests, beautifulsoup4, lxml, html5lib, playwright (con Chromium)
+  Grafici:    matplotlib, seaborn, pillow
+  PDF:        weasyprint, xhtml2pdf, reportlab, pypdf
+  Altro:      pyyaml, cryptography
+
+Per librerie NON in lista, installa silenziosamente prima dell'import:
+  import subprocess, sys; subprocess.check_call([sys.executable,"-m","pip","install","-q","NOME"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+HAI ACCESSO COMPLETO A INTERNET. NON ARRENDERTI MAI. Costruisci sempre una soluzione alternativa.
+
+=== GENERAZIONE PDF PROFESSIONALE ===
+Quando devi creare un PDF, usa SEMPRE questo approccio in 2 step:
+
+STEP 1 — Genera HTML professionale con CSS inline:
+  html = """<!DOCTYPE html>
+  <html>
+  <head>
+  <meta charset="UTF-8">
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap');
+    * {{ margin:0; padding:0; box-sizing:border-box; }}
+    body {{ font-family:'Inter',sans-serif; font-size:10pt; color:#1a1a2e; background:#fff; }}
+    /* ... CSS professionale ... */
+  </style>
+  </head>
+  <body>...</body>
+  </html>"""
+
+STEP 2 — Converti in PDF con Playwright (qualità browser piena, supporta Google Fonts e CSS3):
+  from playwright.sync_api import sync_playwright
+  with sync_playwright() as p:
+      browser = p.chromium.launch(executable_path='/ms-playwright/chromium-1223/chrome-linux64/chrome')
+      page = browser.new_page()
+      page.set_content(html, wait_until='networkidle')
+      page.pdf(path='/app/data/NOME.pdf', format='A4', print_background=True,
+               margin={{'top':'15mm','right':'15mm','bottom':'15mm','left':'15mm'}})
+      browser.close()
+
+In alternativa, usa weasyprint per PDF più leggeri (no JavaScript, ma eccellente CSS):
+  import weasyprint
+  weasyprint.HTML(string=html).write_pdf('/app/data/NOME.pdf')
+
+=== DESIGN PDF PROFESSIONALE ===
+Per documenti (fatture, preventivi, report):
+- Header con logo aziendale (se disponibile), nome azienda, P.IVA, indirizzo
+- Palette colori coerente (es. #1a1a2e navy, #e94560 accent, #f5f5f5 sfondi)
+- Tabelle con alternanza righe, bordi sottili, totali in evidenza
+- Footer con numero pagina e info legali
+- Typography gerarchica: titolo 18pt, sottotitolo 13pt, corpo 10pt
+
+=== GRAFICI E VISUALIZZAZIONI ===
+Per grafici in PDF: genera con matplotlib, salva come PNG in /app/data/, poi incorpora nell'HTML come base64:
+  import base64
+  with open('/app/data/grafico.png','rb') as f:
+      img_b64 = base64.b64encode(f.read()).decode()
+  # nell'HTML: <img src="data:image/png;base64,{img_b64}">
+
+=== OUTPUT ===
+- File generati: salvali in /app/data/ con nome descrittivo (es. preventivo_2024.pdf, report_vendite.xlsx)
+- Testo nei file: in italiano, valuta Euro (€)
+- Print finale: messaggio discorsivo in italiano (stile ChatGPT) che spiega il risultato
+  Se creato un file: includi ESATTAMENTE la dicitura → [File Generato: nome_file.ext]
+  NESSUN log tecnico, solo risposta elegante in Markdown.
+- Ritorna SOLO codice Python eseguibile. Niente blocchi \`\`\`python, niente spiegazioni.`;
 
   if (state.executionError) {
-    prompt += `\n\nATTENZIONE: La precedente esecuzione ha generato questo errore:\n${state.executionError}\n
-Per favore, analizza l'errore e correggi il codice. Questo è il tentativo numero ${state.iterations + 1}.`;
+    prompt += `
+
+=== ERRORE DA CORREGGERE (tentativo ${state.iterations + 1}/3) ===
+L'esecuzione precedente ha fallito con questo errore:
+${state.executionError}
+
+Analizza l'errore riga per riga, identifica la causa root e riscrivi il codice corretto.
+NON ripetere lo stesso errore. Se è un ImportError, installa il pacchetto. Se è un path error, usa /app/data/.`;
   } else {
-    // Aggiungi le istruzioni del supervisor
     const lastMsg = state.messages[state.messages.length - 1].content as string;
-    prompt += `\n\nIstruzioni specifiche per questo task:\n${lastMsg}`;
+    prompt += `
+
+=== TASK DA ESEGUIRE ===
+${lastMsg}`;
   }
 
   const messages = [
@@ -32,18 +117,17 @@ Per favore, analizza l'errore e correggi il codice. Questo è il tentativo numer
   ];
 
   if (state.pythonCode && state.executionError) {
-    // Includi il codice precedente se stiamo facendo self-healing
-    messages.push(new HumanMessage(`Codice precedente (ATTENZIONE HA FALLITO CON ERRORE):\n${state.pythonCode}`));
+    messages.push(new HumanMessage(`Codice precedente che ha FALLITO:\n${state.pythonCode}`));
   }
 
   const response = await coderModel.invoke(messages);
-  
-  // Pulizia del markdown se il modello non ha rispettato le regole
+
   let code = response.content as string;
-  code = code.replace(/^```python\s*/i, "").replace(/```$/i, "").trim();
+  // Rimuovi eventuali blocchi markdown se il modello non ha rispettato le regole
+  code = code.replace(/^```python\s*/i, "").replace(/^```\s*/i, "").replace(/```$/i, "").trim();
 
   return {
     pythonCode: code,
-    iterations: 1, // Verrà sommato al reducer esistente
+    iterations: 1,
   };
 };

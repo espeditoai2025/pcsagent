@@ -1,6 +1,34 @@
 node_modules/
 dist/
 .env
+.env.*
 shared_data/
 
 /src/generated/prisma
+
+# Script di deploy con credenziali VPS
+deploy.js
+redeploy_vps.js
+check_logs.js
+check_vps.js
+create_test_session.js
+fix_port.js
+test_agent.js
+test_e2e.js
+test_generate.js
+test_logo_gen.js
+ufw_check.js
+
+# File con credenziali root
+secret.txt
+update_vps.js
+ssh_check.ps1
+
+# File runtime
+fatturato.txt
+*.log
+.DS_Store
+
+# Sottocartelle locali (gestite separatamente)
+ai-agent-backend/
+frontend-dashboard/

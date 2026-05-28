@@ -2,6 +2,7 @@ import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { agentGraph } from "./graph";
 import { HumanMessage } from "@langchain/core/messages";
+import { ChatOpenAI } from "@langchain/openai";
 
 import { streamSSE } from "hono/streaming";
 import * as fs from "fs";
@@ -9,6 +10,8 @@ import * as path from "path";
 import { PrismaClient } from "@prisma/client";
 const pdfParse = require("pdf-parse");
 import { processAndStoreDocument } from "./utils/embeddings";
+import dotenv from "dotenv";
+dotenv.config();
 
 const app = new Hono();
 const prisma = new PrismaClient();
@@ -173,10 +176,16 @@ app.post("/api/chat", async (c) => {
       const msgCount = await prisma.chatMessage.count({ where: { sessionId } });
       if (msgCount === 1) {
         try {
-          const { ChatGoogleGenerativeAI } = require("@langchain/google-genai");
-          const titleModel = new ChatGoogleGenerativeAI({
-            modelName: "gemini-1.5-flash",
-            apiKey: process.env.GOOGLE_API_KEY,
+          const titleModel = new ChatOpenAI({
+            configuration: {
+              baseURL: "https://openrouter.ai/api/v1",
+              apiKey: process.env.OPENROUTER_API_KEY || "",
+              defaultHeaders: {
+                "HTTP-Referer": process.env.APP_URL || "http://localhost:3000",
+                "X-Title": "AI Agent Builder",
+              },
+            },
+            modelName: "google/gemini-3.1-flash-lite",
             temperature: 0.3,
           });
           const titleRes = await titleModel.invoke(`Riassumi questo messaggio in un breve titolo di 3-5 parole. Rispondi SOLO con il titolo, senza virgolette e senza testo aggiuntivo. Messaggio: "${finalMessageContent}"`);
@@ -192,13 +201,15 @@ app.post("/api/chat", async (c) => {
 
       // 3. Salva l'allegato nel DB se presente
       if (attachment) {
+        const attachPath = path.join(path.resolve(__dirname, "../shared_data"), attachment.filename);
+        const attachSize = fs.existsSync(attachPath) ? fs.statSync(attachPath).size : 0;
         const docRecord = await prisma.document.create({
           data: {
             messageId: userMessageRecord.id,
             filename: attachment.filename,
             filepath: attachment.url,
             fileType: attachment.type || 'unknown',
-            sizeBytes: 0,
+            sizeBytes: attachSize,
           }
         });
 
@@ -281,13 +292,15 @@ app.post("/api/chat", async (c) => {
           if (ext === '.pdf') fileType = 'application/pdf';
           else if (ext === '.png' || ext === '.jpg' || ext === '.jpeg') fileType = 'image/' + ext.substring(1);
           
+          const genFilePath = path.join(path.resolve(__dirname, "../shared_data"), generatedFilename);
+          const genFileSize = fs.existsSync(genFilePath) ? fs.statSync(genFilePath).size : 0;
           await prisma.document.create({
             data: {
               messageId: agentMessageRecord.id,
               filename: generatedFilename,
               filepath: `/api/files/${generatedFilename}`,
               fileType: fileType,
-              sizeBytes: 0,
+              sizeBytes: genFileSize,
             }
           });
         }
