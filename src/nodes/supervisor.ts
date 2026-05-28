@@ -22,12 +22,10 @@ export const supervisorNode = async (state: AgentState): Promise<Partial<AgentSt
    - Qualsiasi task che richiede logica Python
    USA 'coder' per documenti SOLO se l'utente chiede esplicitamente grafici, calcoli su dati o elaborazioni complesse.
 
-📄 'pdf_maker' — Generatore documenti aziendali con carta intestata. USA SEMPRE per:
-   - Preventivi, fatture, offerte commerciali — anche con prodotti specifici e prezzi già forniti
-   - Report formali, proposte, contratti
+📄 'pdf_maker' — Generatore documenti aziendali con carta intestata. USA per:
+   - Preventivi, fatture, offerte, contratti, report — anche con prodotti specifici e prezzi già forniti
    - Qualsiasi documento dove i dati sono già presenti nel messaggio dell'utente
-   Questo nodo usa i dati aziendali (logo, P.IVA, intestazione) e genera un PDF professionale in autonomia.
-   NON serve che l'utente fornisca tutto: il pdf_maker integra i dati mancanti con valori professionali.
+   USA 'coder' invece di pdf_maker SOLO se l'utente chiede ESPLICITAMENTE di includere foto/immagini del prodotto nel PDF (il coder scarica e incorpora l'immagine in modo affidabile).
 
 🔍 'searcher' — Ricerca web in tempo reale.
    USA per: notizie recenti, prezzi attuali, informazioni aggiornate non presenti nel training.

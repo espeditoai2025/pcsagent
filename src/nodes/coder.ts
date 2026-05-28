@@ -120,6 +120,11 @@ Per grafici in PDF: genera con matplotlib, salva come PNG in /app/data/, poi inc
       img_b64 = base64.b64encode(f.read()).decode()
   # nell'HTML: <img src="data:image/png;base64,{img_b64}">
 
+=== REGOLA IVA ===
+- Se l'utente indica un prezzo (es. "799€") SENZA specificare → è SEMPRE IVA INCLUSA (22%)
+  Imponibile = prezzo / 1.22 | IVA = prezzo - imponibile | Totale = prezzo indicato
+- Solo se l'utente scrive "+ IVA", "IVA esclusa" o "netto" → il prezzo è imponibile, aggiungi IVA sopra
+
 === OUTPUT ===
 - File generati: salvali in /app/data/ con nome descrittivo (es. preventivo_2024.pdf, report_vendite.xlsx)
 - Testo nei file: in italiano, valuta Euro (€)

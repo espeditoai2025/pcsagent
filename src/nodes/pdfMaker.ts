@@ -92,13 +92,19 @@ ${userRequest}
    - Margini interni pagina: 15mm su tutti i lati tramite padding sul body o wrapper
    - NON usare @page CSS — la gestione pagina è affidata a Puppeteer
 
-8. CONTENUTO
+8. PREZZI E IVA — REGOLA FONDAMENTALE
+   - Se l'utente indica un prezzo (es. "799€", "1.200 euro") SENZA specificare nulla → è SEMPRE IVA INCLUSA (22%)
+   - Calcola IVA esclusa = prezzo / 1.22, IVA = prezzo - imponibile
+   - Solo se l'utente scrive "+ IVA", "IVA esclusa", "netto" → il prezzo è imponibile e devi aggiungere IVA sopra
+   - Nel documento specifica sempre chiaramente: "Prezzi IVA inclusa (22%)" o "Prezzi IVA esclusa"
+
+9. CONTENUTO
    - Compila TUTTI i campi con dati realistici e coerenti basati sulla richiesta utente
-   - Per preventivi/fatture: includi voci con descrizione, quantità, prezzo unitario, IVA 22%, totale
+   - Per preventivi/fatture: righe prodotto con descrizione, quantità, prezzo unitario, riepilogo IVA, totale finale
    - Per report: includi sezioni chiare, eventuali statistiche fittizie coerenti, raccomandazioni
    - Testo in italiano, valuta Euro (€), formato date italiano (GG/MM/AAAA)
-   - Numero documento: usa formato anno+sequenza (es. PRV-2024-001)
-   - VIETATO usare immagini in base64 (rendono il file enorme e il PDF bianco). Usa solo URL esterni per le immagini.
+   - Numero documento: usa formato anno+sequenza con anno corrente (es. PRV-${annoCorrente}-001)
+   - VIETATO usare immagini in base64. Per immagini prodotto usa URL diretti pubblici (.jpg/.png/.webp) che Puppeteer caricherà automaticamente.
 
 RITORNA SOLO IL CODICE HTML COMPLETO. Nessun blocco markdown \`\`\`html, zero testo prima o dopo.
 Il tuo output viene salvato direttamente come file .html e renderizzato in PDF.`;
@@ -165,8 +171,8 @@ Il tuo output viene salvato direttamente come file .html e renderizzato in PDF.`
     await page.setViewport({ width: 794, height: 1123 });
 
     await page.setContent(htmlCode, { waitUntil: 'domcontentloaded', timeout: 30000 });
-    // Attendi Google Fonts e rendering
-    await page.waitForNetworkIdle({ idleTime: 500, timeout: 6000 }).catch(() => {});
+    // Attendi caricamento immagini esterne, Google Fonts e rendering
+    await page.waitForNetworkIdle({ idleTime: 500, timeout: 15000 }).catch(() => {});
     await new Promise(r => setTimeout(r, 1000));
 
     await page.pdf({
