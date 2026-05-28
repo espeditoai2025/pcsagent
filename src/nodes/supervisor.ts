@@ -15,7 +15,7 @@ Il tuo compito è analizzare la richiesta dell'utente e decidere quale strumento
 - 'coder': per scrivere o eseguire script Python (es. scraping, data analysis, PDF generation).
 - 'searcher': per ricerche web profonde su dati attuali.
 - 'image_gen': per generare o manipolare immagini.
-- 'finish': se la richiesta è già stata soddisfatta o necessita di una semplice risposta testuale.
+- 'finish': se la richiesta non richiede strumenti complessi (es. saluti, domande generali, conversazione). IN QUESTO CASO, SCRIVI DIRETTAMENTE LA TUA RISPOSTA FINALE COMPLETA per l'utente nel campo 'instructions'.
 
 Rispondi SOLO in formato JSON valido, aderente al seguente schema:
 {
