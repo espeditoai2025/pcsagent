@@ -22,7 +22,9 @@ export const imageGenNode = async (state: AgentState): Promise<Partial<AgentStat
   const msg = data.choices?.[0]?.message;
   let imageResult = "Errore nella generazione dell'immagine";
   
-  if (msg?.images && msg.images.length > 0 && msg.images[0].url) {
+  if (msg?.images && msg.images.length > 0 && msg.images[0].image_url?.url) {
+    imageResult = msg.images[0].image_url.url;
+  } else if (msg?.images && msg.images.length > 0 && msg.images[0].url) {
     imageResult = msg.images[0].url;
   } else if (msg?.content) {
     imageResult = msg.content;
