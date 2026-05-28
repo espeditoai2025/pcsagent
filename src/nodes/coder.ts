@@ -11,7 +11,7 @@ Regole fondamentali:
    import subprocess, sys
    subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", "requests", "reportlab"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
    \`\`\`
-3. I file generati (es. PDF, immagini, CSV) DEVONO essere salvati nella cartella \`/app/data/\`.
+3. I file generati (es. PDF, immagini, CSV, TXT) DEVONO essere salvati nella cartella \`/app/data/\`. I contenuti testuali all'interno dei file DEVONO essere in italiano, usando l'Euro come valuta di default se si tratta di dati finanziari (salvo diversa indicazione dell'utente).
 4. Al termine del tuo script, fai \`print()\` di un **messaggio discorsivo e amichevole in italiano (stile ChatGPT)** che riassume i risultati. L'utente leggerà direttamente questo \`print()\`. Se hai creato un file, includi alla fine la dicitura esatta \`[File Generato: nome_file.est]\`. NESSUN LOG TECNICO, solo una risposta elegante in Markdown.
 5. Ritorna SOLO il codice Python. Non aggiungere blocchi Markdown \`\`\`python o spiegazioni testuali. Il tuo output sarà eseguito direttamente.`;
 
