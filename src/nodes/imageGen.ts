@@ -18,9 +18,14 @@ export const imageGenNode = async (state: AgentState): Promise<Partial<AgentStat
     })
   });
 
-  const data = await response.json();
-  const imageResult = data.choices?.[0]?.message?.content || "Errore nella generazione dell'immagine";
+  const msg = data.choices?.[0]?.message;
+  let imageResult = "Errore nella generazione dell'immagine";
   
+  if (msg?.images && msg.images.length > 0 && msg.images[0].url) {
+    imageResult = msg.images[0].url;
+  } else if (msg?.content) {
+    imageResult = msg.content;
+  }
   return {
     messages: [new SystemMessage(`Risultato Generazione Immagine: ${imageResult}`)],
     finalResult: imageResult,
