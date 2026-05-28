@@ -48,8 +48,18 @@ Se è presente l'URL del Logo, inseriscilo in un tag <img src="..." class="h-16 
   const response = await coderModel.invoke(messages);
   
   let htmlCode = response.content as string;
-  // Pulizia da eventuali blocchi markdown
-  htmlCode = htmlCode.replace(/^```html\s*/i, "").replace(/```$/i, "").trim();
+  
+  // Estrazione robusta dell'HTML (cerca il primo <html> e l'ultimo </html>)
+  const htmlMatch = htmlCode.match(/<html[\s\S]*<\/html>/i);
+  if (htmlMatch) {
+    htmlCode = htmlMatch[0];
+  } else {
+    // Fallback: cerca un blocco markdown html
+    const mdMatch = htmlCode.match(/```(?:html)?\s*([\s\S]*?)```/i);
+    if (mdMatch) {
+      htmlCode = mdMatch[1].trim();
+    }
+  }
 
   // 3. Salva l'HTML temporaneo
   const sharedDataDir = path.resolve(process.cwd(), "shared_data");
@@ -74,11 +84,14 @@ Se è presente l'URL del Logo, inseriscilo in un tag <img src="..." class="h-16 
     });
     const page = await browser.newPage();
     
-    // Imposta l'HTML e attendi il caricamento delle risorse (CSS, Font, Immagini)
-    await page.setContent(htmlCode, { waitUntil: 'networkidle0' });
+    // Imposta l'HTML (setContent accetta solo 'load' o 'domcontentloaded')
+    await page.setContent(htmlCode, { waitUntil: 'load' });
     
-    // Attendi un ulteriore secondo per permettere al CDN di Tailwind di eseguire il parsing e applicare gli stili
-    await new Promise(r => setTimeout(r, 1500));
+    // Attendi che la rete sia inattiva per caricare font e risorse esterne (se usate)
+    await page.waitForNetworkIdle({ idleTime: 500 }).catch(() => {});
+    
+    // Attendi un ulteriore secondo per essere sicuri al 100%
+    await new Promise(r => setTimeout(r, 1000));
     
     // Stampa PDF
     await page.pdf({
