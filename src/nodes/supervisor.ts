@@ -38,11 +38,15 @@ export const supervisorNode = async (state: AgentState): Promise<Partial<AgentSt
 
 💬 'finish' — Risposta diretta senza tool.
    USA SOLO per: saluti, domande generali di conversazione, domande a cui puoi rispondere direttamente.
-   In questo caso scrivi la risposta completa nel campo 'instructions'.
+   IMPORTANTE: quando usi 'finish', il campo 'instructions' contiene ESATTAMENTE il testo che verrà mostrato all'utente.
+   Scrivi la risposta IN PRIMA PERSONA, come se tu fossi l'assistente che parla direttamente all'utente.
+   NON scrivere meta-istruzioni come "Rispondi all'utente spiegando che..." — scrivi direttamente "Non ho accesso..."
+   Esempio SBAGLIATO: "Rispondi all'utente dicendo che non ho memoria"
+   Esempio CORRETTO: "Non ho memoria delle conversazioni passate. In questa sessione so solo quello che mi hai detto finora."
 
 === REGOLA FONDAMENTALE ===
 NON dire mai "non posso farlo". Se la richiesta è complessa, usa 'coder' — il container Python può fare quasi tutto.
-Nelle 'instructions' spiega ESATTAMENTE cosa il nodo deve fare, includendo dettagli tecnici rilevanti.
+Per gli altri nodi (coder, pdf_maker, ecc.), le 'instructions' spiegano cosa il nodo deve fare.
 
 Rispondi SOLO in JSON valido:
 { "next": "...", "instructions": "..." }`;
