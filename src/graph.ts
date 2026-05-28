@@ -5,6 +5,7 @@ import { coderNode } from "./nodes/coder";
 import { executorNode, checkErrorEdge } from "./nodes/executor";
 import { searcherNode } from "./nodes/searcher";
 import { imageGenNode } from "./nodes/imageGen";
+import { retrieverNode } from "./nodes/retriever";
 
 // Costruzione del grafo
 const builder = new StateGraph(AgentStateAnnotation)
@@ -12,7 +13,8 @@ const builder = new StateGraph(AgentStateAnnotation)
   .addNode("coder", coderNode)
   .addNode("executor", executorNode)
   .addNode("searcher", searcherNode)
-  .addNode("image_gen", imageGenNode);
+  .addNode("image_gen", imageGenNode)
+  .addNode("retriever", retrieverNode);
 
 // Definizione del flusso
 builder.addEdge(START, "supervisor");
@@ -22,6 +24,7 @@ builder.addConditionalEdges("supervisor", routerEdge, {
   coder: "coder",
   searcher: "searcher",
   image_gen: "image_gen",
+  retriever: "retriever",
   finish: END,
 });
 
@@ -34,9 +37,10 @@ builder.addConditionalEdges("executor", checkErrorEdge, {
   finish: END,    // Se successo, o fallimento dopo 3 iterazioni
 });
 
-// Searcher e Image Gen finiscono dopo l'esecuzione
+// Searcher, Image Gen e Retriever finiscono dopo l'esecuzione
 builder.addEdge("searcher", END);
 builder.addEdge("image_gen", END);
+builder.addEdge("retriever", END);
 
 // Compilazione del Grafo
 export const agentGraph = builder.compile();

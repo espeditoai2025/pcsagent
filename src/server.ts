@@ -7,9 +7,36 @@ import { streamSSE } from "hono/streaming";
 import * as fs from "fs";
 import * as path from "path";
 import { PrismaClient } from "@prisma/client";
+const pdfParse = require("pdf-parse");
+import { processAndStoreDocument } from "./utils/embeddings";
 
 const app = new Hono();
 const prisma = new PrismaClient();
+
+// Funzione di utilità per elaborare i documenti caricati per il RAG
+async function processDocumentForRag(documentId: string, filename: string, mimeType: string) {
+  try {
+    const sharedDataPath = path.resolve(__dirname, "../shared_data");
+    const filePath = path.join(sharedDataPath, filename);
+    let text = "";
+
+    if (mimeType === 'application/pdf') {
+      const dataBuffer = fs.readFileSync(filePath);
+      const data = await pdfParse(dataBuffer);
+      text = data.text;
+    } else if (mimeType === 'text/plain' || mimeType === 'text/csv') {
+      text = fs.readFileSync(filePath, 'utf-8');
+    }
+
+    if (text && text.trim().length > 0) {
+      console.log(`Sto vettorializzando il documento ${documentId}...`);
+      await processAndStoreDocument(documentId, text);
+      console.log(`Documento ${documentId} vettorializzato con successo.`);
+    }
+  } catch (error) {
+    console.error(`Errore durante l'elaborazione del documento ${documentId}:`, error);
+  }
+}
 
 app.get("/", (c) => {
   return c.text("Agent Backend is running.");
@@ -99,9 +126,6 @@ app.post("/api/chat", async (c) => {
       // 1. Trascrizione Audio (STT) se l'allegato è una nota vocale
       if (attachment && attachment.type?.startsWith('audio/')) {
         await stream.writeSSE({ data: JSON.stringify({ type: "status", message: "Sto ascoltando l'audio..." }) });
-        // Simula o esegui chiamata a Whisper (OpenAI / Groq)
-        // const audioBuffer = fs.readFileSync(path.join(__dirname, '../shared_data', attachment.filename));
-        // const transcription = await openai.audio.transcriptions.create({ ... })
         finalMessageContent = "Ho ascoltato la tua nota vocale. (Trascrizione automatica: " + message + ")";
       }
 
@@ -116,15 +140,20 @@ app.post("/api/chat", async (c) => {
 
       // 3. Salva l'allegato nel DB se presente
       if (attachment) {
-        await prisma.document.create({
+        const docRecord = await prisma.document.create({
           data: {
             messageId: userMessageRecord.id,
             filename: attachment.filename,
             filepath: attachment.url,
             fileType: attachment.type || 'unknown',
-            sizeBytes: 0, // Opzionale per ora
+            sizeBytes: 0,
           }
         });
+
+        // 3.5 Manda in background l'estrazione RAG
+        if (attachment.type === 'application/pdf' || attachment.type === 'text/plain' || attachment.type === 'text/csv') {
+          processDocumentForRag(docRecord.id, attachment.filename, attachment.type).catch(console.error);
+        }
       }
 
       // 4. Carica tutto lo storico della sessione
