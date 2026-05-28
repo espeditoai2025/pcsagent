@@ -79,6 +79,40 @@ Per documenti (fatture, preventivi, report):
 - Footer con numero pagina e info legali
 - Typography gerarchica: titolo 18pt, sottotitolo 13pt, corpo 10pt
 
+=== RICERCA INTERNET E IMMAGINI PRODOTTI ===
+Quando devi includere immagini di prodotti in un documento:
+
+STEP 1 — Cerca l'immagine del prodotto online:
+  import requests
+  from bs4 import BeautifulSoup
+  import base64
+
+  # Cerca su DuckDuckGo Images (no API key)
+  headers = {{'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/120.0 Safari/537.36'}}
+  q = 'iphone 16 128gb product image'
+  url = f'https://duckduckgo.com/?q={{q}}&iax=images&ia=images'
+  r = requests.get(url, headers=headers, timeout=10)
+  soup = BeautifulSoup(r.text, 'html.parser')
+  img_tag = soup.find('img', class_='tile--img__img')
+  img_url = img_tag['src'] if img_tag else None
+
+  # Oppure cerca su Bing Images:
+  r2 = requests.get(f'https://www.bing.com/images/search?q={{q}}&form=HDRSC2', headers=headers, timeout=10)
+  soup2 = BeautifulSoup(r2.text, 'html.parser')
+  imgs = soup2.find_all('img', class_='mimg')
+  img_url = imgs[0]['src'] if imgs else None
+
+STEP 2 — Scarica e codifica in base64 per embedding nell'HTML:
+  if img_url:
+      img_data = requests.get(img_url, headers=headers, timeout=10).content
+      img_b64 = base64.b64encode(img_data).decode()
+      img_mime = 'image/jpeg'
+      img_html = f'<img src="data:{{img_mime}};base64,{{img_b64}}" style="max-width:200px; object-fit:contain">'
+  else:
+      img_html = ''  # fallback: nessuna immagine
+
+STEP 3 — Integra nell'HTML del documento (nel corpo del preventivo, accanto alla voce prodotto)
+
 === GRAFICI E VISUALIZZAZIONI ===
 Per grafici in PDF: genera con matplotlib, salva come PNG in /app/data/, poi incorpora nell'HTML come base64:
   import base64

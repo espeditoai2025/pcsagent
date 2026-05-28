@@ -20,15 +20,16 @@ export const supervisorNode = async (state: AgentState): Promise<Partial<AgentSt
    - Scraping web, chiamate API, download file
    - PDF CON DATI DINAMICI: analisi dati + grafici + weasyprint/Playwright → PDF professionale
    - Grafici matplotlib/seaborn da salvare come PNG o PDF
-   - Qualsiasi task che richiede logica Python
-   USA 'coder' per PDF quando: l'utente vuole analizzare dati, creare grafici, o il PDF richiede elaborazione computazionale.
+   - PREVENTIVI/FATTURE CON IMMAGINI PRODOTTO: cerca l'immagine online (Bing/DuckDuckGo), scaricala, incorporala nel PDF
+   - PREVENTIVI/FATTURE CHE RICHIEDONO INFO DA INTERNET (prezzi aggiornati, specifiche prodotto)
+   - Qualsiasi task che richiede logica Python o ricerca web integrata nel documento
 
-📄 'pdf_maker' — Generatore documenti aziendali template-based.
+📄 'pdf_maker' — Generatore documenti aziendali template-based. Più veloce ma senza accesso internet.
    USA per:
-   - Fatture, preventivi, offerte commerciali, contratti
-   - Report formali, proposte aziendali
-   - Qualsiasi documento che usa i DATI AZIENDALI dell'utente (logo, P.IVA, indirizzo)
-   NON usare per PDF che richiedono calcoli su dati o grafici → usa 'coder' in quel caso.
+   - Fatture, preventivi, offerte SEMPLICI (dati già forniti dall'utente, senza bisogno di cercare online)
+   - Report formali, proposte aziendali senza immagini prodotto
+   - Documenti dove l'utente ha già fornito TUTTI i dati necessari
+   NON usare se il documento richiede: immagini prodotto da cercare online, prezzi da verificare, specifiche tecniche da reperire.
 
 🔍 'searcher' — Ricerca web in tempo reale.
    USA per: notizie recenti, prezzi attuali, informazioni aggiornate non presenti nel training.
