@@ -9,10 +9,15 @@ import crypto from "crypto";
 export const pdfMakerNode = async (state: AgentState): Promise<Partial<AgentState>> => {
   // 1. Estrai i dati aziendali dell'utente
   const u = state.userData || {};
+  const nomeCompleto = [u.firstName, u.lastName].filter(Boolean).join(" ") || "Utente Sconosciuto";
+  const indirizzoCompleto = [u.street, u.city, u.zipCode].filter(Boolean).join(", ") || "Indirizzo non specificato";
+  
   const companyInfo = `
-    Nome Azienda: ${u.companyName || u.name || "Azienda"}
-    P.IVA: ${u.vatNumber || "Non specificata"}
-    Indirizzo: ${u.address || "Non specificato"}
+    Nome/Intestatario: ${nomeCompleto}
+    Azienda: ${u.companyName || ""}
+    P.IVA: ${u.vatNumber || ""}
+    Indirizzo: ${indirizzoCompleto}
+    Telefono: ${u.phone || ""}
     Sito Web: ${u.website || ""}
     URL Logo: ${u.companyLogoUrl || ""}
   `;
