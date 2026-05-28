@@ -237,12 +237,14 @@ app.post("/api/chat", async (c) => {
         const nodeName = Object.keys(chunk)[0];
         lastState = (chunk as Record<string, any>)[nodeName];
         
-        let statusMessage = "Sto ragionando...";
-        if (nodeName === "supervisor") statusMessage = "L'agente sta pianificando...";
-        if (nodeName === "coder") statusMessage = "Sto scrivendo il codice Python...";
-        if (nodeName === "executor") statusMessage = "Sto eseguendo il codice nella Sandbox sicura...";
-        if (nodeName === "searcher") statusMessage = "Sto cercando informazioni sul web...";
-        if (nodeName === "image_gen") statusMessage = "Sto generando l'immagine...";
+        let statusMessage = "Elaborazione grafo LangChain...";
+        if (nodeName === "supervisor") statusMessage = "[Nodo: Supervisor] Analisi richiesta e routing...";
+        if (nodeName === "coder") statusMessage = "[Nodo: Coder] Generazione script Python...";
+        if (nodeName === "executor") statusMessage = "[Nodo: Executor] Esecuzione script in container Docker...";
+        if (nodeName === "searcher") statusMessage = "[Nodo: Searcher] Interrogazione web API...";
+        if (nodeName === "image_gen") statusMessage = "[Nodo: ImageGen] Chiamata API generazione immagine...";
+        if (nodeName === "pdf_maker") statusMessage = "[Nodo: PDFMaker] Compilazione HTML e rendering Puppeteer...";
+        if (nodeName === "retriever") statusMessage = "[Nodo: Retriever] Vettorializzazione ed estrazione dati...";
 
         await stream.writeSSE({
           data: JSON.stringify({ type: "status", message: statusMessage }),
