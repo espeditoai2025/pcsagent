@@ -5,7 +5,6 @@ dotenv.config();
 
 const openRouterApiKey = process.env.OPENROUTER_API_KEY || "";
 
-// Configurazione base per OpenRouter
 const openRouterConfig = {
   configuration: {
     baseURL: "https://openrouter.ai/api/v1",
@@ -15,29 +14,21 @@ const openRouterConfig = {
       "X-Title": "AI Agent Builder",
     },
   },
+  timeout: 90000, // 90s max — evita hang infiniti su OpenRouter
 };
 
-/**
- * Modello principale per ragionamento e coding.
- */
 export const coderModel = new ChatOpenAI({
   ...openRouterConfig,
   modelName: "google/gemini-3.1-flash-lite",
-  temperature: 0.1, // Bassa temperatura per maggiore affidabilità nel codice
+  temperature: 0.1,
 });
 
-/**
- * Modello per ricerche web approfondite
- */
 export const searchModel = new ChatOpenAI({
   ...openRouterConfig,
   modelName: "perplexity/sonar",
   temperature: 0.2,
 });
 
-/**
- * Modello per routing (può essere lo stesso del coder)
- */
 export const routerModel = new ChatOpenAI({
   ...openRouterConfig,
   modelName: "google/gemini-3.1-flash-lite",
