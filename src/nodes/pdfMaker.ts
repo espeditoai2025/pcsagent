@@ -64,7 +64,8 @@ Se è presente l'URL del Logo, inseriscilo in un tag <img src="..." class="h-16 
   try {
     const browser = await puppeteer.launch({
       args: ['--no-sandbox', '--disable-setuid-sandbox'],
-      headless: true
+      headless: true,
+      channel: 'chrome'
     });
     const page = await browser.newPage();
     
