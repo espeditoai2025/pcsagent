@@ -125,8 +125,39 @@ app.post("/api/chat", async (c) => {
 
       // 1. Trascrizione Audio (STT) se l'allegato è una nota vocale
       if (attachment && attachment.type?.startsWith('audio/')) {
-        await stream.writeSSE({ data: JSON.stringify({ type: "status", message: "Sto ascoltando l'audio..." }) });
-        finalMessageContent = "Ho ascoltato la tua nota vocale. (Trascrizione automatica: " + message + ")";
+        await stream.writeSSE({ data: JSON.stringify({ type: "status", message: "Sto ascoltando la nota vocale..." }) });
+        
+        try {
+          const audioBuffer = fs.readFileSync(path.join(__dirname, '../shared_data', attachment.filename));
+          const formData = new FormData();
+          const blob = new Blob([audioBuffer], { type: attachment.type });
+          formData.append('file', blob, attachment.filename);
+          formData.append('model', 'whisper-1');
+          formData.append('language', 'it');
+
+          const apiKey = process.env.OPENAI_API_KEY;
+          if (!apiKey) throw new Error("OPENAI_API_KEY is missing");
+
+          const sttRes = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${apiKey}`
+            },
+            body: formData as any
+          });
+          
+          if (sttRes.ok) {
+            const sttData = await sttRes.json();
+            finalMessageContent = `[Nota vocale trascritta dall'utente]: ${sttData.text}`;
+          } else {
+            const errText = await sttRes.text();
+            console.error("Whisper API error:", errText);
+            finalMessageContent = "[Audio incomprensibile - Errore API Whisper]";
+          }
+        } catch (e: any) {
+          console.error("Errore STT interno:", e);
+          finalMessageContent = "[Errore interno durante la trascrizione audio]";
+        }
       }
 
       // 2. Salva il messaggio dell'utente nel DB

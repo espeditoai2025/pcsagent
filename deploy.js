@@ -35,6 +35,7 @@ fi
 echo "Creazione file .env..."
 cat << 'EOF' > .env
 OPENROUTER_API_KEY="${process.env.OPENROUTER_API_KEY || ''}"
+OPENAI_API_KEY="${process.env.OPENAI_API_KEY || ''}"
 APP_URL="http://187.124.221.180:3005"
 PORT=3005
 VPS_IP="187.124.221.180"
