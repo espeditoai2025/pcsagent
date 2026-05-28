@@ -75,13 +75,12 @@ ${userRequest}
    - Data generazione documento
 
 7. STAMPA/PDF OTTIMIZZATA
-   @page {{ size: A4; margin: 0; }}
    @media print {{
      body {{ -webkit-print-color-adjust: exact; print-color-adjust: exact; }}
-     .no-print {{ display: none; }}
    }}
    - Evita page-break dentro le tabelle
    - Margini interni pagina: 15mm su tutti i lati tramite padding sul body o wrapper
+   - NON usare @page CSS — la gestione pagina è affidata a Puppeteer
 
 8. CONTENUTO
    - Compila TUTTI i campi con dati realistici e coerenti basati sulla richiesta utente
@@ -89,6 +88,7 @@ ${userRequest}
    - Per report: includi sezioni chiare, eventuali statistiche fittizie coerenti, raccomandazioni
    - Testo in italiano, valuta Euro (€), formato date italiano (GG/MM/AAAA)
    - Numero documento: usa formato anno+sequenza (es. PRV-2024-001)
+   - VIETATO usare immagini in base64 (rendono il file enorme e il PDF bianco). Usa solo URL esterni per le immagini.
 
 RITORNA SOLO IL CODICE HTML COMPLETO. Nessun blocco markdown \`\`\`html, zero testo prima o dopo.
 Il tuo output viene salvato direttamente come file .html e renderizzato in PDF.`;
@@ -152,14 +152,13 @@ Il tuo output viene salvato direttamente come file .html e renderizzato in PDF.`
     });
 
     const page = await browser.newPage();
-    await page.setViewport({ width: 794, height: 1123 }); // A4 px at 96dpi
+    await page.setViewport({ width: 794, height: 1123 });
 
-    // Carica tramite URL locale per supportare risorse relative
-    await page.setContent(htmlCode, { waitUntil: 'load' });
+    // Carica da file: più robusto di setContent per HTML grandi (evita PDF bianco)
+    await page.goto(`file://${htmlFilePath}`, { waitUntil: 'networkidle0', timeout: 30000 });
 
-    // Attendi Google Fonts e risorse di rete
-    await page.waitForNetworkIdle({ idleTime: 800, timeout: 8000 }).catch(() => {});
-    await new Promise(r => setTimeout(r, 500));
+    // Wait aggiuntivo per Google Fonts e rendering finale
+    await new Promise(r => setTimeout(r, 1500));
 
     await page.pdf({
       path: pdfFilePath,
