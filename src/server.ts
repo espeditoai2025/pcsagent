@@ -46,16 +46,28 @@ app.get("/api/files/:filename", async (c) => {
 
 // Endpoint per invocare l'agente con Server-Sent Events (SSE)
 app.post("/api/chat", async (c) => {
-  const { message } = await c.req.json();
+  const { message, messages } = await c.req.json();
   
-  if (!message) {
-    return c.json({ error: "Message is required" }, 400);
+  if (!message && (!messages || messages.length === 0)) {
+    return c.json({ error: "Message or messages array is required" }, 400);
   }
 
   return streamSSE(c, async (stream) => {
     try {
+      // Costruisci i messaggi per l'agente
+      let agentMessages = [];
+      
+      if (messages && messages.length > 0) {
+        agentMessages = messages.map((msg: any) => {
+          if (msg.role === 'user') return new HumanMessage(msg.content);
+          return new (require("@langchain/core/messages").AIMessage)(msg.content);
+        });
+      } else {
+        agentMessages = [new HumanMessage(message)];
+      }
+
       const initialState = {
-        messages: [new HumanMessage(message)],
+        messages: agentMessages,
       };
 
       let lastState: any = null;
