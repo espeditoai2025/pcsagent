@@ -85,7 +85,14 @@ app.post("/api/chat", async (c) => {
         // Se il testo del supervisor contiene tool calls, formattiamo.
         let content = lastState.finalResult || lastMessage.content;
         
-        // Pulisce l'output da eventuali log di tool se non richiesti esplicitamente (miglioramento UX)
+        // Pulisce l'output del Supervisor nascondendo la sua formattazione interna (miglioramento UX)
+        if (typeof content === 'string' && content.includes('Supervisor Decision:')) {
+          const match = content.match(/Instructions:\s*([\s\S]*)/i);
+          if (match && match[1]) {
+            content = match[1].trim();
+          }
+        }
+
         // Inviamo il risultato finale
         await stream.writeSSE({
           data: JSON.stringify({ 
