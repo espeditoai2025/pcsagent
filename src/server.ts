@@ -46,25 +46,34 @@ app.get("/api/files/:filename", async (c) => {
 
 // Endpoint per invocare l'agente con Server-Sent Events (SSE)
 app.post("/api/chat", async (c) => {
-  const { message, messages } = await c.req.json();
+  const { message, sessionId, userId } = await c.req.json();
   
-  if (!message && (!messages || messages.length === 0)) {
-    return c.json({ error: "Message or messages array is required" }, 400);
+  if (!message || !sessionId || !userId) {
+    return c.json({ error: "Message, sessionId, and userId are required" }, 400);
   }
 
   return streamSSE(c, async (stream) => {
     try {
-      // Costruisci i messaggi per l'agente
-      let agentMessages = [];
-      
-      if (messages && messages.length > 0) {
-        agentMessages = messages.map((msg: any) => {
-          if (msg.role === 'user') return new HumanMessage(msg.content);
-          return new (require("@langchain/core/messages").AIMessage)(msg.content);
-        });
-      } else {
-        agentMessages = [new HumanMessage(message)];
-      }
+      // 1. Salva il messaggio dell'utente nel DB
+      await prisma.chatMessage.create({
+        data: {
+          sessionId,
+          role: 'user',
+          content: message,
+        }
+      });
+
+      // 2. Carica tutto lo storico della sessione
+      const history = await prisma.chatMessage.findMany({
+        where: { sessionId },
+        orderBy: { createdAt: 'asc' }
+      });
+
+      // 3. Costruisci i messaggi per LangGraph
+      const agentMessages = history.map((msg) => {
+        if (msg.role === 'user') return new HumanMessage(msg.content);
+        return new (require("@langchain/core/messages").AIMessage)(msg.content);
+      });
 
       const initialState = {
         messages: agentMessages,
@@ -74,7 +83,6 @@ app.post("/api/chat", async (c) => {
 
       // Usa agentGraph.stream per ottenere gli aggiornamenti dei nodi in tempo reale
       for await (const chunk of await agentGraph.stream(initialState)) {
-        // Estrai il nome del nodo che ha appena finito di eseguire
         const nodeName = Object.keys(chunk)[0];
         lastState = (chunk as Record<string, any>)[nodeName];
         
@@ -85,7 +93,6 @@ app.post("/api/chat", async (c) => {
         if (nodeName === "searcher") statusMessage = "Sto cercando informazioni sul web...";
         if (nodeName === "image_gen") statusMessage = "Sto generando l'immagine...";
 
-        // Invia lo stato al frontend
         await stream.writeSSE({
           data: JSON.stringify({ type: "status", message: statusMessage }),
         });
@@ -94,18 +101,23 @@ app.post("/api/chat", async (c) => {
       if (lastState) {
         const lastMessage = lastState.messages[lastState.messages.length - 1];
         
-        // Cerca di estrarre e filtrare l'output
-        // Se c'è un finalResult è il risultato desiderato. Altrimenti usiamo il testo del supervisor.
-        // Se il testo del supervisor contiene tool calls, formattiamo.
         let content = lastState.finalResult || lastMessage.content;
         
-        // Pulisce l'output del Supervisor nascondendo la sua formattazione interna (miglioramento UX)
         if (typeof content === 'string' && content.includes('Supervisor Decision:')) {
           const match = content.match(/Instructions:\s*([\s\S]*)/i);
           if (match && match[1]) {
             content = match[1].trim();
           }
         }
+
+        // 4. Salva la risposta dell'agente nel DB
+        await prisma.chatMessage.create({
+          data: {
+            sessionId,
+            role: 'agent',
+            content: content,
+          }
+        });
 
         // Inviamo il risultato finale
         await stream.writeSSE({
