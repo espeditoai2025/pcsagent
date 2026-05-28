@@ -62,7 +62,7 @@ app.post("/api/chat", async (c) => {
       for await (const chunk of await agentGraph.stream(initialState)) {
         // Estrai il nome del nodo che ha appena finito di eseguire
         const nodeName = Object.keys(chunk)[0];
-        lastState = chunk[nodeName];
+        lastState = (chunk as Record<string, any>)[nodeName];
         
         let statusMessage = "Sto ragionando...";
         if (nodeName === "supervisor") statusMessage = "L'agente sta pianificando...";

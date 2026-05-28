@@ -21,9 +21,10 @@ mkdir -p /opt
 cd /opt
 
 if [ -d "ai-agent-backend" ]; then
-  echo "Repository esistente, faccio git pull..."
+  echo "Repository esistente, sincronizzo con origin/main..."
   cd ai-agent-backend
-  git pull origin main
+  git fetch --all
+  git reset --hard origin/main
 else
   echo "Clonazione repository..."
   git clone https://github.com/espeditoai2025/pcsagent.git ai-agent-backend
