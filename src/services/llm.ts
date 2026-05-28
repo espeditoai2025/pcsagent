@@ -22,7 +22,7 @@ const openRouterConfig = {
  */
 export const coderModel = new ChatOpenAI({
   ...openRouterConfig,
-  modelName: "deepseek/deepseek-chat",
+  modelName: "google/gemini-3.1-flash-lite",
   temperature: 0.1, // Bassa temperatura per maggiore affidabilità nel codice
 });
 
@@ -40,6 +40,6 @@ export const searchModel = new ChatOpenAI({
  */
 export const routerModel = new ChatOpenAI({
   ...openRouterConfig,
-  modelName: "deepseek/deepseek-chat",
+  modelName: "google/gemini-3.1-flash-lite",
   temperature: 0.0,
 });
