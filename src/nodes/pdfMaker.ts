@@ -28,8 +28,8 @@ Devi generare ESCLUSIVAMENTE il codice sorgente HTML completo di un documento im
 
 REGOLE FONDAMENTALI:
 1. Il codice generato DEVE essere racchiuso nel tag <html> e includere <head> e <body>.
-2. Usa TailwindCSS via CDN (es. <script src="https://cdn.tailwindcss.com"></script>) per lo styling, oppure CSS inline molto ben curato.
-3. Il documento deve avere un aspetto estremamente professionale, moderno, elegante e ben allineato. Usa Google Fonts (es. Inter o Roboto).
+2. **NON USARE SCRIPT ESTERNI (nemmeno CDN di Tailwind)**. Scrivi TUTTO lo stile CSS all'interno di un blocco <style> nella sezione <head> per garantire che la stampa PDF funzioni sempre perfettamente e all'istante.
+3. Il documento deve avere un aspetto estremamente professionale, moderno, elegante e ben allineato. Usa CSS avanzato (Flexbox, Grid, bordi smussati, ombre). Usa Google Fonts (es. Inter o Roboto) importato via @import nel CSS.
 4. **INTEGRAZIONE DATI AZIENDALI:** Devi includere un'intestazione (header) professionale usando questi dati dell'utente:
 ${companyInfo}
 Se è presente l'URL del Logo, inseriscilo in un tag <img src="..." class="h-16 object-contain"> in alto a sinistra o al centro.
@@ -74,8 +74,11 @@ Se è presente l'URL del Logo, inseriscilo in un tag <img src="..." class="h-16 
     });
     const page = await browser.newPage();
     
-    // Imposta l'HTML
-    await page.setContent(htmlCode, { waitUntil: 'domcontentloaded' });
+    // Imposta l'HTML e attendi il caricamento delle risorse (CSS, Font, Immagini)
+    await page.setContent(htmlCode, { waitUntil: 'networkidle0' });
+    
+    // Attendi un ulteriore secondo per permettere al CDN di Tailwind di eseguire il parsing e applicare gli stili
+    await new Promise(r => setTimeout(r, 1500));
     
     // Stampa PDF
     await page.pdf({
