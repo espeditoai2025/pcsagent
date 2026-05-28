@@ -1,10 +1,12 @@
 generator client {
   provider = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
 }
 
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+  extensions = [vector]
 }
 
 model User {
@@ -55,9 +57,18 @@ model Document {
   messageId     String
   message       ChatMessage     @relation(fields: [messageId], references: [id], onDelete: Cascade)
   filename      String
-  filepath      String          // Percorso su disco della VPS (es. /app/data/... o /uploads/...)
+  filepath      String          // Percorso su disco della VPS
   fileType      String          // MIME type o estensione
   sizeBytes     Int?
   createdAt     DateTime        @default(now())
-  // embedding  Unsupported("vector(1536)")? // Abilitato in futuro per RAG
+  chunks        DocumentChunk[]
+}
+
+model DocumentChunk {
+  id            String          @id @default(uuid())
+  documentId    String
+  document      Document        @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  content       String          // Testo del chunk
+  embedding     Unsupported("vector(1536)")? // OpenRouter embeddings / OpenAI
+  createdAt     DateTime        @default(now())
 }
