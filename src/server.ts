@@ -169,6 +169,27 @@ app.post("/api/chat", async (c) => {
         }
       });
 
+      // 2.5 Generazione Titolo se è il primo messaggio
+      const msgCount = await prisma.chatMessage.count({ where: { sessionId } });
+      if (msgCount === 1) {
+        try {
+          const { ChatGoogleGenerativeAI } = require("@langchain/google-genai");
+          const titleModel = new ChatGoogleGenerativeAI({
+            modelName: "gemini-1.5-flash",
+            apiKey: process.env.GOOGLE_API_KEY,
+            temperature: 0.3,
+          });
+          const titleRes = await titleModel.invoke(`Riassumi questo messaggio in un breve titolo di 3-5 parole. Rispondi SOLO con il titolo, senza virgolette e senza testo aggiuntivo. Messaggio: "${finalMessageContent}"`);
+          const title = titleRes.content.toString().replace(/['"]/g, '').trim();
+          await prisma.chatSession.update({
+            where: { id: sessionId },
+            data: { title }
+          });
+        } catch (e) {
+          console.error("Errore generazione titolo:", e);
+        }
+      }
+
       // 3. Salva l'allegato nel DB se presente
       if (attachment) {
         const docRecord = await prisma.document.create({
@@ -241,13 +262,33 @@ app.post("/api/chat", async (c) => {
         }
 
         // 4. Salva la risposta dell'agente nel DB
-        await prisma.chatMessage.create({
+        const agentMessageRecord = await prisma.chatMessage.create({
           data: {
             sessionId,
             role: 'agent',
             content: content,
           }
         });
+
+        // 4.5. Controlla se c'è un file generato
+        const fileMatch = content.match(/\[File Generato:\s*([^\]]+)\]/);
+        if (fileMatch && fileMatch[1]) {
+          const generatedFilename = fileMatch[1].trim();
+          let ext = path.extname(generatedFilename).toLowerCase();
+          let fileType = 'unknown';
+          if (ext === '.pdf') fileType = 'application/pdf';
+          else if (ext === '.png' || ext === '.jpg' || ext === '.jpeg') fileType = 'image/' + ext.substring(1);
+          
+          await prisma.document.create({
+            data: {
+              messageId: agentMessageRecord.id,
+              filename: generatedFilename,
+              filepath: `/api/files/${generatedFilename}`,
+              fileType: fileType,
+              sizeBytes: 0,
+            }
+          });
+        }
 
         // Inviamo il risultato finale
         await stream.writeSSE({

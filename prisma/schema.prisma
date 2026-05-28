@@ -13,10 +13,14 @@ model User {
   id            String          @id @default(uuid())
   email         String          @unique
   password      String?
-  name          String?
+  firstName     String?
+  lastName      String?
+  phone         String?
+  street        String?
+  city          String?
+  zipCode       String?
   companyName   String?
   vatNumber     String?
-  address       String?
   companyLogoUrl String?
   website       String?
   createdAt     DateTime        @default(now())
@@ -38,6 +42,7 @@ model AgentInstance {
 
 model ChatSession {
   id            String          @id @default(uuid())
+  title         String?
   agentId       String
   agent         AgentInstance   @relation(fields: [agentId], references: [id], onDelete: Cascade)
   userId        String
