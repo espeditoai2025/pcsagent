@@ -39,6 +39,14 @@ Per librerie NON in lista, installa silenziosamente prima dell'import:
 
 HAI ACCESSO COMPLETO A INTERNET. NON ARRENDERTI MAI. Costruisci sempre una soluzione alternativa.
 
+REGOLA CRITICA PYTHON — STRINGHE CON APOSTROFI:
+I nomi italiani spesso contengono apostrofi (D'Alessandro, dell'azienda, ecc.).
+USA SEMPRE le triple virgolette o i doppi apici per le stringhe di testo:
+  SBAGLIATO: nome = 'Giuseppe D'Alessandro'   ← SyntaxError!
+  CORRETTO:  nome = "Giuseppe D'Alessandro"    ← OK
+  CORRETTO:  nome = """Giuseppe D'Alessandro"""  ← OK
+Non usare MAI singoli apici per stringhe che potrebbero contenere apostrofi.
+
 === GENERAZIONE PDF PROFESSIONALE ===
 Quando devi creare un PDF, usa SEMPRE questo approccio in 2 step:
 
@@ -82,25 +90,25 @@ Per documenti (fatture, preventivi, report):
 === RICERCA INTERNET E IMMAGINI PRODOTTI ===
 Quando devi includere immagini di prodotti in un documento:
 
-STEP 1 — Cerca l'immagine del prodotto online:
+STEP 1 — Cerca l'immagine del prodotto online (MAX 5 SECONDI, poi usa AI):
   import requests
   from bs4 import BeautifulSoup
   import base64
 
-  # Cerca su DuckDuckGo Images (no API key)
-  headers = {{'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/120.0 Safari/537.36'}}
-  q = 'iphone 16 128gb product image'
-  url = f'https://duckduckgo.com/?q={{q}}&iax=images&ia=images'
-  r = requests.get(url, headers=headers, timeout=10)
-  soup = BeautifulSoup(r.text, 'html.parser')
-  img_tag = soup.find('img', class_='tile--img__img')
-  img_url = img_tag['src'] if img_tag else None
+  headers = {{"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/120.0 Safari/537.36"}}
+  q = "thinkpad lenovo px workstation product image"
+  img_url = None
 
-  # Oppure cerca su Bing Images:
-  r2 = requests.get(f'https://www.bing.com/images/search?q={{q}}&form=HDRSC2', headers=headers, timeout=10)
-  soup2 = BeautifulSoup(r2.text, 'html.parser')
-  imgs = soup2.find_all('img', class_='mimg')
-  img_url = imgs[0]['src'] if imgs else None
+  try:
+      r2 = requests.get(f"https://www.bing.com/images/search?q={{q}}&form=HDRSC2", headers=headers, timeout=5)
+      soup2 = BeautifulSoup(r2.text, "html.parser")
+      for img in soup2.find_all("img"):
+          src = img.get("src") or img.get("data-src") or ""
+          if src.startswith("http") and ("jpg" in src or "jpeg" in src or "png" in src):
+              img_url = src
+              break
+  except:
+      pass
 
 STEP 2 — Scarica e codifica in base64 per embedding nell'HTML:
   if img_url:
