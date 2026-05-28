@@ -28,6 +28,11 @@ export const AgentStateAnnotation = Annotation.Root({
     reducer: (left, right) => right ?? left,
     default: () => null,
   }),
+  // Dati utente (profilo, logo, azienda)
+  userData: Annotation<any | null>({
+    reducer: (left, right) => right ?? left,
+    default: () => null,
+  }),
 });
 
 export type AgentState = typeof AgentStateAnnotation.State;

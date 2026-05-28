@@ -2,3 +2,5 @@ node_modules/
 dist/
 .env
 shared_data/
+
+/src/generated/prisma

@@ -6,6 +6,7 @@ import { executorNode, checkErrorEdge } from "./nodes/executor";
 import { searcherNode } from "./nodes/searcher";
 import { imageGenNode } from "./nodes/imageGen";
 import { retrieverNode } from "./nodes/retriever";
+import { pdfMakerNode } from "./nodes/pdfMaker";
 
 // Costruzione del grafo
 const builder = new StateGraph(AgentStateAnnotation)
@@ -14,7 +15,8 @@ const builder = new StateGraph(AgentStateAnnotation)
   .addNode("executor", executorNode)
   .addNode("searcher", searcherNode)
   .addNode("image_gen", imageGenNode)
-  .addNode("retriever", retrieverNode);
+  .addNode("retriever", retrieverNode)
+  .addNode("pdf_maker", pdfMakerNode);
 
 // Definizione del flusso
 builder.addEdge(START, "supervisor");
@@ -25,6 +27,7 @@ builder.addConditionalEdges("supervisor", routerEdge, {
   searcher: "searcher",
   image_gen: "image_gen",
   retriever: "retriever",
+  pdf_maker: "pdf_maker",
   finish: END,
 });
 
@@ -41,6 +44,7 @@ builder.addConditionalEdges("executor", checkErrorEdge, {
 builder.addEdge("searcher", END);
 builder.addEdge("image_gen", END);
 builder.addEdge("retriever", END);
+builder.addEdge("pdf_maker", END);
 
 // Compilazione del Grafo
 export const agentGraph = builder.compile();

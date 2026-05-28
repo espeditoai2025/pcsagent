@@ -193,6 +193,11 @@ app.post("/api/chat", async (c) => {
         orderBy: { createdAt: 'asc' }
       });
 
+      // 4.5. Carica i dati del profilo aziendale dell'utente
+      const userProfile = await prisma.user.findUnique({
+        where: { id: userId }
+      });
+
       // 3. Costruisci i messaggi per LangGraph
       const agentMessages = history.map((msg) => {
         if (msg.role === 'user') return new HumanMessage(msg.content);
@@ -201,6 +206,7 @@ app.post("/api/chat", async (c) => {
 
       const initialState = {
         messages: agentMessages,
+        userData: userProfile,
       };
 
       let lastState: any = null;

@@ -5,22 +5,24 @@ import { z } from "zod";
 
 // Definiamo uno schema per il JSON in output del supervisor
 const routerSchema = z.object({
-  next: z.enum(["coder", "searcher", "image_gen", "retriever", "finish"]),
+  next: z.enum(["coder", "searcher", "image_gen", "retriever", "pdf_maker", "finish"]),
   instructions: z.string().describe("Istruzioni specifiche per il nodo successivo"),
 });
 
 export const supervisorNode = async (state: AgentState): Promise<Partial<AgentState>> => {
   const systemPrompt = `Sei il Supervisor di un Agente AI Multi-Modello.
 Il tuo compito è analizzare la richiesta dell'utente e decidere quale strumento chiamare:
-- 'coder': per scrivere o eseguire script Python (es. scraping, data analysis, PDF generation).
+- 'coder': per scrivere o eseguire script Python (es. scraping, data analysis, automazioni generiche).
+- 'pdf_maker': SE L'UTENTE RICHIEDE LA GENERAZIONE DI UN DOCUMENTO, REPORT, PREVENTIVO O FATTURA IN PDF. Questo nodo usa i dati aziendali dell'utente per generare un PDF professionale. Non usare 'coder' per i PDF.
 - 'searcher': per ricerche web profonde su dati attuali.
 - 'image_gen': per generare o manipolare immagini.
 - 'retriever': se l'utente ti chiede informazioni su documenti (PDF, CSV, ecc.) della sessione.
+- 'pdf_maker': per creare documenti PDF.
 - 'finish': se la richiesta non richiede strumenti complessi (es. saluti, domande generali, conversazione). IN QUESTO CASO, SCRIVI DIRETTAMENTE LA TUA RISPOSTA FINALE COMPLETA per l'utente nel campo 'instructions'.
 
 Rispondi SOLO in formato JSON valido, aderente al seguente schema:
 {
-  "next": "coder" | "searcher" | "image_gen" | "retriever" | "finish",
+  "next": "coder" | "searcher" | "image_gen" | "retriever" | "pdf_maker" | "finish",
   "instructions": "string"
 }`;
 
@@ -46,6 +48,7 @@ export const routerEdge = (state: AgentState): string => {
   if (content.includes("ROUTE TO searcher")) return "searcher";
   if (content.includes("ROUTE TO image_gen")) return "image_gen";
   if (content.includes("ROUTE TO retriever")) return "retriever";
+  if (content.includes("ROUTE TO pdf_maker")) return "pdf_maker";
   
   return "finish";
 };

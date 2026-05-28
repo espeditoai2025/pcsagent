@@ -24,6 +24,7 @@
     "dotenv": "^17.4.2",
     "hono": "^4.12.23",
     "pdf-parse": "^2.4.5",
+    "puppeteer": "^25.1.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
