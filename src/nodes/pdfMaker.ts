@@ -1,6 +1,6 @@
 import { AgentState } from "../state";
 import { coderModel } from "../services/llm";
-import { SystemMessage } from "@langchain/core/messages";
+import { SystemMessage, HumanMessage } from "@langchain/core/messages";
 import puppeteer from "puppeteer";
 import * as path from "path";
 import * as fs from "fs/promises";
@@ -41,7 +41,7 @@ Se è presente l'URL del Logo, inseriscilo in un tag <img src="..." class="h-16 
   const messages = [
     new SystemMessage(prompt),
     ...state.messages,
-    new SystemMessage(`Istruzioni specifiche per il documento:\n${lastMsg}`)
+    new HumanMessage(`Istruzioni aggiuntive (promemoria per il documento):\n${lastMsg}`)
   ];
 
   console.log("PDF Maker: Sto generando il template HTML...");

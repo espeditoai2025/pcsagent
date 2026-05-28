@@ -1,6 +1,6 @@
 import { AgentState } from "../state";
 import { coderModel } from "../services/llm";
-import { SystemMessage } from "@langchain/core/messages";
+import { SystemMessage, HumanMessage } from "@langchain/core/messages";
 
 export const coderNode = async (state: AgentState): Promise<Partial<AgentState>> => {
   let prompt = `Sei un esperto sviluppatore Python. Devi scrivere uno script Python che risolva la richiesta dell'utente in modo definitivo e autonomo.
@@ -33,7 +33,7 @@ Per favore, analizza l'errore e correggi il codice. Questo è il tentativo numer
 
   if (state.pythonCode && state.executionError) {
     // Includi il codice precedente se stiamo facendo self-healing
-    messages.push(new SystemMessage(`Codice precedente:\n${state.pythonCode}`));
+    messages.push(new HumanMessage(`Codice precedente (ATTENZIONE HA FALLITO CON ERRORE):\n${state.pythonCode}`));
   }
 
   const response = await coderModel.invoke(messages);
