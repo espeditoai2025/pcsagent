@@ -11,15 +11,25 @@ export const pdfMakerNode = async (state: AgentState): Promise<Partial<AgentStat
   const nomeCompleto = [u.firstName, u.lastName].filter(Boolean).join(" ") || "Utente";
   const indirizzoCompleto = [u.street, u.city, u.zipCode].filter(Boolean).join(", ") || "";
 
+  // Data corrente da iniettare nel documento
+  const oggi = new Date().toLocaleDateString("it-IT", { day: "2-digit", month: "2-digit", year: "numeric" });
+  const annoCorrente = new Date().getFullYear();
+
+  // Logo HTML pronto — se disponibile, l'LLM deve usarlo esattamente così
+  const logoHtml = u.companyLogoUrl
+    ? `<img src="${u.companyLogoUrl}" style="height:55px; max-width:180px; object-fit:contain; display:block;" alt="Logo ${u.companyName || ''}">`
+    : `<div style="width:55px;height:55px;background:#0f2557;border-radius:6px;display:flex;align-items:center;justify-content:center;color:white;font-weight:800;font-size:18px;">${(u.companyName || nomeCompleto || "A").charAt(0).toUpperCase()}</div>`;
+
   const companyInfo = `
-Nome/Intestatario: ${nomeCompleto}
+Intestatario: ${nomeCompleto}
 Azienda: ${u.companyName || ""}
 P.IVA: ${u.vatNumber || "N/D"}
 Indirizzo: ${indirizzoCompleto}
 Telefono: ${u.phone || ""}
 Email: ${u.email || ""}
 Sito Web: ${u.website || ""}
-URL Logo: ${u.companyLogoUrl || ""}`.trim();
+DATA DOCUMENTO: ${oggi}
+ANNO: ${annoCorrente}`.trim();
 
   const userRequest = state.messages[state.messages.length - 1].content as string;
 
@@ -52,9 +62,9 @@ ${userRequest}
 
 4. LAYOUT HEADER (obbligatorio, posizionato in cima)
    - Flexbox row, space-between
-   - Sinistra: logo aziendale (se URL logo disponibile: <img src="URL" style="height:50px; object-fit:contain">),
-     altrimenti iniziali azienda in un box colorato
-   - Centro/Destra: dati azienda (nome, P.IVA, indirizzo, telefono, email) in font size 8.5pt
+   - Sinistra: usa ESATTAMENTE questo HTML per il logo/iniziali (già pronto, non inventare altro):
+     ${logoHtml}
+   - Destra: dati azienda (nome, P.IVA, indirizzo, telefono, email) in font size 8.5pt
    - Tipo documento (es. "PREVENTIVO", "FATTURA", "REPORT") in UPPERCASE, font-size:28pt, colore accento, lettera-spacing:3px
 
 5. CORPO DEL DOCUMENTO
@@ -154,11 +164,10 @@ Il tuo output viene salvato direttamente come file .html e renderizzato in PDF.`
     const page = await browser.newPage();
     await page.setViewport({ width: 794, height: 1123 });
 
-    // Carica da file: più robusto di setContent per HTML grandi (evita PDF bianco)
-    await page.goto(`file://${htmlFilePath}`, { waitUntil: 'networkidle0', timeout: 30000 });
-
-    // Wait aggiuntivo per Google Fonts e rendering finale
-    await new Promise(r => setTimeout(r, 1500));
+    await page.setContent(htmlCode, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    // Attendi Google Fonts e rendering
+    await page.waitForNetworkIdle({ idleTime: 500, timeout: 6000 }).catch(() => {});
+    await new Promise(r => setTimeout(r, 1000));
 
     await page.pdf({
       path: pdfFilePath,
