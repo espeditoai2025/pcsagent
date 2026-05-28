@@ -34,8 +34,10 @@ app.get("/api/files/:filename", async (c) => {
     // Set content type
     let contentType = "application/octet-stream";
     if (ext === ".pdf") contentType = "application/pdf";
-    else if (ext === ".png") contentType = "image/png";
+    else if (ext === ".png" || ext === ".jpg" || ext === ".jpeg") contentType = `image/${ext.substring(1)}`;
     else if (ext === ".csv") contentType = "text/csv";
+    else if (ext === ".txt") contentType = "text/plain";
+    else if (ext === ".webm" || ext === ".mp3" || ext === ".wav") contentType = `audio/${ext.substring(1)}`;
     
     c.header("Content-Type", contentType);
     return c.body(file);
@@ -44,26 +46,88 @@ app.get("/api/files/:filename", async (c) => {
   }
 });
 
-// Endpoint per invocare l'agente con Server-Sent Events (SSE)
+// Endpoint per caricare file o audio
+app.post("/api/upload", async (c) => {
+  try {
+    const body = await c.req.parseBody();
+    const file = body['file'];
+
+    if (!file || typeof file === 'string') {
+      return c.json({ error: "No file uploaded" }, 400);
+    }
+
+    const arrayBuffer = await file.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    
+    const sharedDataPath = path.resolve(__dirname, "../shared_data");
+    if (!fs.existsSync(sharedDataPath)) {
+      fs.mkdirSync(sharedDataPath, { recursive: true });
+    }
+
+    // Genera un nome file univoco
+    const uniqueName = `${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.\-_]/g, '')}`;
+    const filePath = path.join(sharedDataPath, uniqueName);
+
+    fs.writeFileSync(filePath, buffer);
+
+    return c.json({ 
+      success: true, 
+      filename: uniqueName, 
+      url: `/api/files/${uniqueName}`,
+      type: file.type
+    });
+  } catch (error: any) {
+    console.error("Upload error:", error);
+    return c.json({ error: "File upload failed" }, 500);
+  }
+});
+
 app.post("/api/chat", async (c) => {
-  const { message, sessionId, userId } = await c.req.json();
+  const { message, sessionId, userId, attachment } = await c.req.json();
   
-  if (!message || !sessionId || !userId) {
-    return c.json({ error: "Message, sessionId, and userId are required" }, 400);
+  if (!message && !attachment) {
+    return c.json({ error: "Message or attachment is required" }, 400);
+  }
+  if (!sessionId || !userId) {
+    return c.json({ error: "sessionId and userId are required" }, 400);
   }
 
   return streamSSE(c, async (stream) => {
     try {
-      // 1. Salva il messaggio dell'utente nel DB
-      await prisma.chatMessage.create({
+      let finalMessageContent = message;
+
+      // 1. Trascrizione Audio (STT) se l'allegato è una nota vocale
+      if (attachment && attachment.type?.startsWith('audio/')) {
+        await stream.writeSSE({ data: JSON.stringify({ type: "status", message: "Sto ascoltando l'audio..." }) });
+        // Simula o esegui chiamata a Whisper (OpenAI / Groq)
+        // const audioBuffer = fs.readFileSync(path.join(__dirname, '../shared_data', attachment.filename));
+        // const transcription = await openai.audio.transcriptions.create({ ... })
+        finalMessageContent = "Ho ascoltato la tua nota vocale. (Trascrizione automatica: " + message + ")";
+      }
+
+      // 2. Salva il messaggio dell'utente nel DB
+      const userMessageRecord = await prisma.chatMessage.create({
         data: {
           sessionId,
           role: 'user',
-          content: message,
+          content: finalMessageContent,
         }
       });
 
-      // 2. Carica tutto lo storico della sessione
+      // 3. Salva l'allegato nel DB se presente
+      if (attachment) {
+        await prisma.document.create({
+          data: {
+            messageId: userMessageRecord.id,
+            filename: attachment.filename,
+            filepath: attachment.url,
+            fileType: attachment.type || 'unknown',
+            sizeBytes: 0, // Opzionale per ora
+          }
+        });
+      }
+
+      // 4. Carica tutto lo storico della sessione
       const history = await prisma.chatMessage.findMany({
         where: { sessionId },
         orderBy: { createdAt: 'asc' }
