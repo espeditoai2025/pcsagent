@@ -1,0 +1,62 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String          @id @default(uuid())
+  email         String          @unique
+  name          String?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  agents        AgentInstance[]
+  sessions      ChatSession[]
+}
+
+model AgentInstance {
+  id            String          @id @default(uuid())
+  name          String
+  systemPrompt  String?
+  userId        String
+  user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sessions      ChatSession[]
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+}
+
+model ChatSession {
+  id            String          @id @default(uuid())
+  agentId       String
+  agent         AgentInstance   @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  userId        String
+  user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages      ChatMessage[]
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+}
+
+model ChatMessage {
+  id            String          @id @default(uuid())
+  sessionId     String
+  session       ChatSession     @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  role          String          // 'user' | 'agent' | 'system'
+  content       String
+  documents     Document[]      // Allegati (PDF, Immagini generate, CSV)
+  createdAt     DateTime        @default(now())
+}
+
+model Document {
+  id            String          @id @default(uuid())
+  messageId     String
+  message       ChatMessage     @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  filename      String
+  filepath      String          // Percorso su disco della VPS (es. /app/data/... o /uploads/...)
+  fileType      String          // MIME type o estensione
+  sizeBytes     Int?
+  createdAt     DateTime        @default(now())
+  // embedding  Unsupported("vector(1536)")? // Abilitato in futuro per RAG
+}

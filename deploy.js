@@ -1,3 +1,4 @@
+require('dotenv').config();
 const { Client } = require('ssh2');
 
 const conn = new Client();
@@ -40,10 +41,18 @@ VPS_IP="187.124.221.180"
 VPS_USER="root"
 VPS_PASSWORD="${process.env.VPS_PASSWORD || ''}"
 HOSTINGER_API_TOKEN="${process.env.HOSTINGER_API_TOKEN || ''}"
+DATABASE_URL="postgresql://root:rootpassword@localhost:5432/agentdb?schema=public"
 EOF
 
 echo "Installazione dipendenze progetto..."
 npm install
+
+echo "Avvio del database (Docker Compose)..."
+docker-compose up -d
+
+echo "Allineamento schema database (Prisma)..."
+npx prisma generate
+npx prisma db push --accept-data-loss
 
 echo "Build del progetto TypeScript..."
 npm run build

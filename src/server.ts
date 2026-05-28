@@ -6,8 +6,10 @@ import { HumanMessage } from "@langchain/core/messages";
 import { streamSSE } from "hono/streaming";
 import * as fs from "fs";
 import * as path from "path";
+import { PrismaClient } from "@prisma/client";
 
 const app = new Hono();
+const prisma = new PrismaClient();
 
 app.get("/", (c) => {
   return c.text("Agent Backend is running.");
