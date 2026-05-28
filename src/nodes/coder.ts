@@ -9,6 +9,11 @@ export const coderNode = async (state: AgentState): Promise<Partial<AgentState>>
   const indirizzo = [u.street, u.city, u.zipCode].filter(Boolean).join(", ") || "";
   const hasCompanyData = !!(u.companyName || nomeCompleto);
 
+  // Se il logo è un data URL base64 (enorme), NON passarlo al coder — causerebbe script Python enormi
+  const logoPerCoder = u.companyLogoUrl && !u.companyLogoUrl.startsWith('data:')
+    ? u.companyLogoUrl
+    : '';
+
   const companyBlock = hasCompanyData ? `
 === DATI AZIENDALI UTENTE (usa per carta intestata) ===
 Nome/Intestatario: ${nomeCompleto}
@@ -18,9 +23,8 @@ Indirizzo: ${indirizzo}
 Telefono: ${u.phone || ""}
 Email: ${u.email || ""}
 Sito Web: ${u.website || ""}
-Logo URL: ${u.companyLogoUrl || ""}
-Quando generi documenti PDF (fatture, preventivi, report), usa questi dati per l'intestazione professionale.
-Se è disponibile il Logo URL, incorporalo nell'HTML come: <img src="LOGO_URL" style="height:55px; object-fit:contain">
+Logo URL: ${logoPerCoder || "(logo non disponibile come URL pubblico)"}
+Quando generi documenti PDF, usa questi dati per l'intestazione. Se Logo URL è disponibile, usalo nell'HTML.
 ` : "";
 
   let prompt = `Sei un esperto sviluppatore Python autonomo. Scrivi script Python completi che risolvono la richiesta in modo definitivo.
