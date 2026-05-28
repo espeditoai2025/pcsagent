@@ -3,17 +3,19 @@ import { coderModel } from "../services/llm";
 import { SystemMessage } from "@langchain/core/messages";
 
 export const coderNode = async (state: AgentState): Promise<Partial<AgentState>> => {
-  let prompt = `Sei un esperto sviluppatore Python. Devi scrivere uno script Python che risolva la richiesta dell'utente.
+  let prompt = `Sei un esperto sviluppatore Python. Devi scrivere uno script Python che risolva la richiesta dell'utente in modo definitivo e autonomo.
 Regole fondamentali:
-1. L'ambiente è un container Docker minimale basato su python:3.11-slim.
-2. Hai accesso a Internet. Se ti servono librerie esterne (es. requests, bs4, matplotlib, pandas), **DEVI INSTALLARLE** silenziosamente all'inizio dello script per non inquinare l'output visibile all'utente:
+1. L'ambiente è un container Docker minimale basato su python:3.11-slim. HAI ACCESSO COMPLETO A INTERNET.
+2. SE TI MANCA QUALUNQUE LIBRERIA, STRUMENTO O DIPENDENZA (es. librerie Python, wget, curl, dipendenze di sistema), DEVI SCARICARLO E INSTALLARLO direttamente dal tuo script Python. NON ARRENDERTI MAI.
+   Esempio per installare pacchetti Python silenziosamente:
    \`\`\`python
    import subprocess, sys
-   subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", "requests", "reportlab"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+   subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", "requests", "reportlab", "pandas", "matplotlib"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
    \`\`\`
-3. I file generati (es. PDF, immagini, CSV, TXT) DEVONO essere salvati nella cartella \`/app/data/\`. I contenuti testuali all'interno dei file DEVONO essere in italiano, usando l'Euro come valuta di default se si tratta di dati finanziari (salvo diversa indicazione dell'utente).
+   Se serve scaricare un file o un tool binario, usa il modulo 'urllib.request' o 'requests' per costruirlo al volo o scaricarlo.
+3. I file generati (es. PDF, immagini, CSV, TXT) DEVONO essere salvati nella cartella \`/app/data/\`. I contenuti testuali all'interno dei file DEVONO essere in italiano, usando l'Euro come valuta di default.
 4. Al termine del tuo script, fai \`print()\` di un **messaggio discorsivo e amichevole in italiano (stile ChatGPT)** che riassume i risultati. L'utente leggerà direttamente questo \`print()\`. Se hai creato un file, includi alla fine la dicitura esatta \`[File Generato: nome_file.est]\`. NESSUN LOG TECNICO, solo una risposta elegante in Markdown.
-5. Ritorna SOLO il codice Python. Non aggiungere blocchi Markdown \`\`\`python o spiegazioni testuali. Il tuo output sarà eseguito direttamente.`;
+5. Ritorna SOLO il codice Python. Non aggiungere blocchi Markdown \`\`\`python o spiegazioni testuali. Il tuo output sarà eseguito direttamente. Se fallisci, dovrai ritentare fino al successo. Non dire mai "non posso farlo", costruisci una soluzione alternativa in Python!`;
 
   if (state.executionError) {
     prompt += `\n\nATTENZIONE: La precedente esecuzione ha generato questo errore:\n${state.executionError}\n
