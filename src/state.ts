@@ -1,0 +1,33 @@
+import { BaseMessage } from "@langchain/core/messages";
+import { Annotation } from "@langchain/langgraph";
+
+// Definizione rigorosa dello stato dell'Agente
+export const AgentStateAnnotation = Annotation.Root({
+  // Cronologia dei messaggi scambiati tra utente e modelli
+  messages: Annotation<BaseMessage[]>({
+    reducer: (left, right) => left.concat(right),
+    default: () => [],
+  }),
+  // Ultimo codice Python generato
+  pythonCode: Annotation<string | null>({
+    reducer: (left, right) => right ?? left,
+    default: () => null,
+  }),
+  // Errore catturato durante l'esecuzione di Docker
+  executionError: Annotation<string | null>({
+    reducer: (left, right) => right, // overwrite or clear
+    default: () => null,
+  }),
+  // Contatore dei tentativi (per prevenire loop infiniti)
+  iterations: Annotation<number>({
+    reducer: (left, right) => left + right,
+    default: () => 0,
+  }),
+  // Risultato finale (es. testo generato, o path del file generato)
+  finalResult: Annotation<string | null>({
+    reducer: (left, right) => right ?? left,
+    default: () => null,
+  }),
+});
+
+export type AgentState = typeof AgentStateAnnotation.State;
