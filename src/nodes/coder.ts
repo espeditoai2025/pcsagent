@@ -104,12 +104,32 @@ STEP 1 — Cerca l'immagine del prodotto online:
 
 STEP 2 — Scarica e codifica in base64 per embedding nell'HTML:
   if img_url:
-      img_data = requests.get(img_url, headers=headers, timeout=10).content
-      img_b64 = base64.b64encode(img_data).decode()
-      img_mime = 'image/jpeg'
-      img_html = f'<img src="data:{{img_mime}};base64,{{img_b64}}" style="max-width:200px; object-fit:contain">'
-  else:
-      img_html = ''  # fallback: nessuna immagine
+      try:
+          img_data = requests.get(img_url, headers=headers, timeout=10).content
+          img_b64 = base64.b64encode(img_data).decode()
+          img_mime = 'image/jpeg'
+          img_html = f'<img src="data:{{img_mime}};base64,{{img_b64}}" style="max-width:200px; object-fit:contain">'
+      except:
+          img_html = ''
+
+  # FALLBACK: se la ricerca immagine fallisce, generala con l'API OpenRouter
+  if not img_html:
+      import os
+      openrouter_key = os.environ.get('OPENROUTER_API_KEY', '')
+      if openrouter_key:
+          gen_r = requests.post('https://openrouter.ai/api/v1/chat/completions',
+              headers={{'Authorization': f'Bearer {{openrouter_key}}', 'Content-Type': 'application/json'}},
+              json={{'model': 'google/gemini-3.1-flash-image-preview',
+                    'messages': [{{'role': 'user', 'content': f'Professional product photo of {{q}}, white background, clean studio lighting'}}]}},
+              timeout=30)
+          if gen_r.status_code == 200:
+              choices = gen_r.json().get('choices', [])
+              if choices:
+                  img_url_gen = choices[0].get('message', {{}}).get('images', [{{}}])[0].get('url', '')
+                  if img_url_gen:
+                      img_data = requests.get(img_url_gen, timeout=10).content
+                      img_b64 = base64.b64encode(img_data).decode()
+                      img_html = f'<img src="data:image/jpeg;base64,{{img_b64}}" style="max-width:200px; object-fit:contain">'
 
 STEP 3 — Integra nell'HTML del documento (nel corpo del preventivo, accanto alla voce prodotto)
 

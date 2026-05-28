@@ -15,9 +15,11 @@ export const pdfMakerNode = async (state: AgentState): Promise<Partial<AgentStat
   const oggi = new Date().toLocaleDateString("it-IT", { day: "2-digit", month: "2-digit", year: "numeric" });
   const annoCorrente = new Date().getFullYear();
 
-  // Logo HTML pronto — se disponibile, l'LLM deve usarlo esattamente così
+  // Logo HTML — costruito qui per non ingolfare il prompt LLM con base64 enormi
+  // Il logo viene iniettato DOPO che l'LLM genera l'HTML, sostituendo il placeholder
+  const LOGO_PLACEHOLDER = "___LOGO_AZIENDALE___";
   const logoHtml = u.companyLogoUrl
-    ? `<img src="${u.companyLogoUrl}" style="height:55px; max-width:180px; object-fit:contain; display:block;" alt="Logo ${u.companyName || ''}">`
+    ? `<img src="${u.companyLogoUrl}" style="height:55px; max-width:180px; object-fit:contain; display:block;" alt="Logo">`
     : `<div style="width:55px;height:55px;background:#0f2557;border-radius:6px;display:flex;align-items:center;justify-content:center;color:white;font-weight:800;font-size:18px;">${(u.companyName || nomeCompleto || "A").charAt(0).toUpperCase()}</div>`;
 
   const companyInfo = `
@@ -62,8 +64,8 @@ ${userRequest}
 
 4. LAYOUT HEADER (obbligatorio, posizionato in cima)
    - Flexbox row, space-between
-   - Sinistra: usa ESATTAMENTE questo HTML per il logo/iniziali (già pronto, non inventare altro):
-     ${logoHtml}
+   - Sinistra: inserisci ESATTAMENTE questo testo come placeholder per il logo (verrà sostituito automaticamente):
+     ${LOGO_PLACEHOLDER}
    - Destra: dati azienda (nome, P.IVA, indirizzo, telefono, email) in font size 8.5pt
    - Tipo documento (es. "PREVENTIVO", "FATTURA", "REPORT") in UPPERCASE, font-size:28pt, colore accento, lettera-spacing:3px
 
@@ -127,6 +129,10 @@ Il tuo output viene salvato direttamente come file .html e renderizzato in PDF.`
     const mdMatch = htmlCode.match(/```(?:html)?\s*([\s\S]*?)```/i);
     if (mdMatch) htmlCode = mdMatch[1].trim();
   }
+
+  // Sostituisce il placeholder con il logo reale (base64 o URL)
+  // In questo modo il prompt LLM non viene ingolfato con dati enormi
+  htmlCode = htmlCode.replace(new RegExp(LOGO_PLACEHOLDER, 'g'), logoHtml);
 
   const sharedDataDir = path.resolve(process.cwd(), "shared_data");
   await fs.mkdir(sharedDataDir, { recursive: true }).catch(() => {});
