@@ -9,13 +9,7 @@ import * as path from "path";
 import { PrismaClient } from "@prisma/client";
 
 const app = new Hono();
-const prisma = new PrismaClient({
-  datasources: {
-    db: {
-      url: process.env.DATABASE_URL
-    }
-  }
-});
+const prisma = new PrismaClient();
 
 app.get("/", (c) => {
   return c.text("Agent Backend is running.");
