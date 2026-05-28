@@ -18,18 +18,16 @@ export const supervisorNode = async (state: AgentState): Promise<Partial<AgentSt
    - Qualsiasi automazione, calcolo, elaborazione dati
    - Analisi di file (CSV, Excel, PDF) e generazione di report dati
    - Scraping web, chiamate API, download file
-   - PDF CON DATI DINAMICI: analisi dati + grafici + weasyprint/Playwright → PDF professionale
-   - Grafici matplotlib/seaborn da salvare come PNG o PDF
-   - PREVENTIVI/FATTURE CON IMMAGINI PRODOTTO: cerca l'immagine online (Bing/DuckDuckGo), scaricala, incorporala nel PDF
-   - PREVENTIVI/FATTURE CHE RICHIEDONO INFO DA INTERNET (prezzi aggiornati, specifiche prodotto)
-   - Qualsiasi task che richiede logica Python o ricerca web integrata nel documento
+   - PDF con grafici, calcoli complessi o elaborazione dati
+   - Qualsiasi task che richiede logica Python
+   USA 'coder' per documenti SOLO se l'utente chiede esplicitamente grafici, calcoli su dati o elaborazioni complesse.
 
-📄 'pdf_maker' — Generatore documenti aziendali template-based. Più veloce ma senza accesso internet.
-   USA per:
-   - Fatture, preventivi, offerte SEMPLICI (dati già forniti dall'utente, senza bisogno di cercare online)
-   - Report formali, proposte aziendali senza immagini prodotto
-   - Documenti dove l'utente ha già fornito TUTTI i dati necessari
-   NON usare se il documento richiede: immagini prodotto da cercare online, prezzi da verificare, specifiche tecniche da reperire.
+📄 'pdf_maker' — Generatore documenti aziendali con carta intestata. USA SEMPRE per:
+   - Preventivi, fatture, offerte commerciali — anche con prodotti specifici e prezzi già forniti
+   - Report formali, proposte, contratti
+   - Qualsiasi documento dove i dati sono già presenti nel messaggio dell'utente
+   Questo nodo usa i dati aziendali (logo, P.IVA, intestazione) e genera un PDF professionale in autonomia.
+   NON serve che l'utente fornisca tutto: il pdf_maker integra i dati mancanti con valori professionali.
 
 🔍 'searcher' — Ricerca web in tempo reale.
    USA per: notizie recenti, prezzi attuali, informazioni aggiornate non presenti nel training.
