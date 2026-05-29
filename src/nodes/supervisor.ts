@@ -1,5 +1,6 @@
 import { AgentState } from "../state";
 import { routerModel } from "../services/llm";
+import { formatMemoryForPrompt } from "../services/memoryService";
 import { SystemMessage } from "@langchain/core/messages";
 import { z } from "zod";
 
@@ -9,7 +10,27 @@ const routerSchema = z.object({
 });
 
 export const supervisorNode = async (state: AgentState): Promise<Partial<AgentState>> => {
+  // Costruisci il blocco memoria dall'userData
+  const userData = state.userData || {};
+  const memoryBlock = formatMemoryForPrompt(userData.agentMemory);
+
+  // Costruisci il blocco dati aziendali
+  const nomeCompleto = [userData.firstName, userData.lastName].filter(Boolean).join(" ");
+  const indirizzo = [userData.street, userData.city, userData.zipCode].filter(Boolean).join(", ");
+  const hasCompanyData = !!(userData.companyName || nomeCompleto);
+  const companyBlock = hasCompanyData ? `
+=== DATI AZIENDALI UTENTE ===
+Nome: ${nomeCompleto}
+Azienda: ${userData.companyName || ""}
+P.IVA: ${userData.vatNumber || ""}
+Indirizzo: ${indirizzo}
+Telefono: ${userData.phone || ""}
+Email: ${userData.email || ""}
+Sito Web: ${userData.website || ""}` : "";
+
   const systemPrompt = `Sei il Supervisor di un Agente AI autonomo. Analizza la richiesta dell'utente e scegli lo strumento corretto.
+${memoryBlock}
+${companyBlock}
 
 === STRUMENTI DISPONIBILI ===
 
@@ -42,7 +63,7 @@ export const supervisorNode = async (state: AgentState): Promise<Partial<AgentSt
    Scrivi la risposta IN PRIMA PERSONA, come se tu fossi l'assistente che parla direttamente all'utente.
    NON scrivere meta-istruzioni come "Rispondi all'utente spiegando che..." — scrivi direttamente "Non ho accesso..."
    Esempio SBAGLIATO: "Rispondi all'utente dicendo che non ho memoria"
-   Esempio CORRETTO: "Non ho memoria delle conversazioni passate. In questa sessione so solo quello che mi hai detto finora."
+   Esempio CORRETTO: "Ciao Marco! Come posso aiutarti oggi?"
 
 === REGOLA FONDAMENTALE ===
 NON dire mai "non posso farlo". Se la richiesta è complessa, usa 'coder' — il container Python può fare quasi tutto.

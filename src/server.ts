@@ -10,6 +10,7 @@ import * as path from "path";
 import { PrismaClient } from "@prisma/client";
 const pdfParse = require("pdf-parse");
 import { processAndStoreDocument } from "./utils/embeddings";
+import { extractAndUpdateMemory } from "./services/memoryService";
 import dotenv from "dotenv";
 dotenv.config();
 
@@ -304,6 +305,10 @@ app.post("/api/chat", async (c) => {
             }
           });
         }
+
+        // 5. Estrazione memoria in background (fire-and-forget)
+        // Analizza la conversazione per estrarre fatti utili sull'utente
+        extractAndUpdateMemory(userId, sessionId).catch(console.error);
 
         // Inviamo il risultato finale
         await stream.writeSSE({
