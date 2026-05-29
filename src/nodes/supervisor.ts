@@ -5,7 +5,7 @@ import { SystemMessage } from "@langchain/core/messages";
 import { z } from "zod";
 
 const routerSchema = z.object({
-  next: z.enum(["coder", "searcher", "image_gen", "retriever", "pdf_maker", "finish"]),
+  next: z.enum(["coder", "searcher", "image_gen", "retriever", "pdf_maker", "gestionale", "finish"]),
   instructions: z.string().describe("Istruzioni dettagliate e specifiche per il nodo successivo"),
 });
 
@@ -57,6 +57,17 @@ ${companyBlock}
 📚 'retriever' — Ricerca nei documenti caricati dall'utente.
    USA per: "nel documento che ti ho mandato...", "nel PDF/CSV/file che ho allegato..."
 
+🏢 'gestionale' — Accede ai dati aziendali dell'utente (clienti, fornitori, prodotti, preventivi).
+   USA per:
+   - Creare preventivi/offerte per un cliente specifico usando i prodotti del catalogo
+   - "fai un preventivo per [cliente] per [prodotto]"
+   - "mostrami la lista clienti / fornitori / prodotti"
+   - "invia un'email a [cliente]" — il nodo caricherà l'email del cliente dal gestionale
+   - Analisi contabilità, storico preventivi, fatturato, riepilogo commerciale
+   - Qualsiasi richiesta che richiede dati specifici dell'azienda (prezzi, anagrafiche, quantità)
+   IMPORTANTE: dopo 'gestionale', l'agente può passare a 'pdf_maker' per generare il documento
+   o a 'coder' per inviare email.
+
 💬 'finish' — Risposta diretta senza tool.
    USA SOLO per: saluti, domande generali di conversazione, domande a cui puoi rispondere direttamente.
    IMPORTANTE: quando usi 'finish', il campo 'instructions' contiene ESATTAMENTE il testo che verrà mostrato all'utente.
@@ -93,6 +104,7 @@ export const routerEdge = (state: AgentState): string => {
   if (content.includes("ROUTE TO image_gen")) return "image_gen";
   if (content.includes("ROUTE TO retriever")) return "retriever";
   if (content.includes("ROUTE TO pdf_maker")) return "pdf_maker";
+  if (content.includes("ROUTE TO gestionale")) return "gestionale";
 
   return "finish";
 };

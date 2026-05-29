@@ -24,10 +24,18 @@ model User {
   companyLogoUrl String?
   website        String?
   agentMemory    String?
+  emailSmtpHost  String?
+  emailSmtpPort  Int?
+  emailSmtpUser  String?
+  emailSmtpPass  String?
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
   agents         AgentInstance[]
   sessions       ChatSession[]
+  anagrafiche    Anagrafica[]
+  prodotti       Prodotto[]
+  documenti      Documento[]
+  auditLogs      AuditLog[]
 }
 
 model AgentInstance {
@@ -60,13 +68,13 @@ model ChatSession {
 }
 
 model ChatMessage {
-  id        String     @id @default(uuid())
+  id        String      @id @default(uuid())
   sessionId String
   session   ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   role      String
   content   String
   documents Document[]
-  createdAt DateTime   @default(now())
+  createdAt DateTime    @default(now())
 
   @@index([sessionId])
   @@index([sessionId, createdAt])
@@ -87,12 +95,108 @@ model Document {
 }
 
 model DocumentChunk {
-  id         String   @id @default(uuid())
+  id         String                       @id @default(uuid())
   documentId String
-  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  document   Document                     @relation(fields: [documentId], references: [id], onDelete: Cascade)
   content    String
   embedding  Unsupported("vector(1536)")?
-  createdAt  DateTime @default(now())
+  createdAt  DateTime                     @default(now())
 
   @@index([documentId])
+}
+
+// tipo: CLIENTE | FORNITORE | LEAD
+model Anagrafica {
+  id                String      @id @default(uuid())
+  userId            String
+  user              User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tipo              String      @default("CLIENTE")
+  ragioneSociale    String
+  pivaCf            String?
+  email             String?
+  telefono          String?
+  indirizzoCompleto String?
+  referente         String?
+  noteAi            String?
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+  documenti         Documento[] @relation("AnagraficaDocumenti")
+
+  @@index([userId])
+  @@index([userId, tipo])
+}
+
+// tipoArticolo: PRODOTTO_FISICO | SERVIZIO | ABBONAMENTO
+model Prodotto {
+  id            String          @id @default(uuid())
+  userId        String
+  user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sku           String?
+  nomeProdotto  String
+  descrizione   String?
+  categoria     String?
+  prezzoVendita Float
+  aliquotaIva   Float           @default(22)
+  tipoArticolo  String          @default("SERVIZIO")
+  attivo        Boolean         @default(true)
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  righe         RigaDocumento[]
+
+  @@index([userId])
+}
+
+// tipoDocumento: PREVENTIVO | FATTURA | ORDINE_FORNITORE
+// stato: BOZZA | INVIATO | ACCETTATO | RIFIUTATO
+model Documento {
+  id               String          @id @default(uuid())
+  userId           String
+  user             User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  anagraficaId     String?
+  anagrafica       Anagrafica?     @relation("AnagraficaDocumenti", fields: [anagraficaId], references: [id])
+  tipoDocumento    String          @default("PREVENTIVO")
+  stato            String          @default("BOZZA")
+  numero           String
+  oggetto          String?
+  note             String?
+  dataScadenza     DateTime?
+  totaleImponibile Float           @default(0)
+  totaleImposte    Float           @default(0)
+  righe            RigaDocumento[]
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  @@index([userId])
+  @@index([anagraficaId])
+  @@index([userId, tipoDocumento])
+  @@index([userId, stato])
+}
+
+model RigaDocumento {
+  id                      String    @id @default(uuid())
+  documentoId             String
+  documento               Documento @relation(fields: [documentoId], references: [id], onDelete: Cascade)
+  prodottoId              String?
+  prodotto                Prodotto? @relation(fields: [prodottoId], references: [id])
+  descrizione             String
+  quantita                Float     @default(1)
+  prezzoUnitarioApplicato Float
+  scontoPercentuale       Float     @default(0)
+  aliquotaIva             Float     @default(22)
+  createdAt               DateTime  @default(now())
+
+  @@index([documentoId])
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  azione    String
+  esito     String   @default("OK")
+  dettagli  String?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([userId, createdAt])
 }
