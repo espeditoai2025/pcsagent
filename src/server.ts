@@ -264,9 +264,15 @@ app.post("/api/chat", async (c) => {
       }
 
       if (lastState) {
-        const lastMessage = lastState.messages[lastState.messages.length - 1];
-        
-        let content = lastState.finalResult || lastMessage.content;
+        const messages: any[] = lastState.messages ?? [];
+        const lastMessage = messages.length > 0 ? messages[messages.length - 1] : null;
+
+        let content: string =
+          lastState.finalResult ||
+          (lastMessage?.content ?? null) ||
+          (lastState.executionError
+            ? `Si è verificato un errore durante l'esecuzione: ${lastState.executionError}`
+            : "Elaborazione completata senza risposta. Riprova.");
         
         if (typeof content === 'string' && content.includes('Supervisor Decision:')) {
           const match = content.match(/Instructions:\s*([\s\S]*)/i);
@@ -284,15 +290,18 @@ app.post("/api/chat", async (c) => {
           }
         });
 
-        // 4.5. Controlla se c'è un file generato
-        const fileMatch = content.match(/\[File Generato:\s*([^\]]+)\]/);
-        if (fileMatch && fileMatch[1]) {
+        // 4.5. Controlla se ci sono file generati (PDF + HTML, immagini, ecc.)
+        const fileMatches = [...content.matchAll(/\[File Generato:\s*([^\]]+)\]/g)];
+        for (const fileMatch of fileMatches) {
           const generatedFilename = fileMatch[1].trim();
-          let ext = path.extname(generatedFilename).toLowerCase();
+          const ext = path.extname(generatedFilename).toLowerCase();
           let fileType = 'unknown';
           if (ext === '.pdf') fileType = 'application/pdf';
-          else if (ext === '.png' || ext === '.jpg' || ext === '.jpeg') fileType = 'image/' + ext.substring(1);
-          
+          else if (ext === '.html') fileType = 'text/html';
+          else if (ext === '.png' || ext === '.jpg' || ext === '.jpeg' || ext === '.webp')
+            fileType = 'image/' + ext.substring(1);
+          else if (ext === '.csv') fileType = 'text/csv';
+
           const genFilePath = path.join(path.resolve(__dirname, "../shared_data"), generatedFilename);
           const genFileSize = fs.existsSync(genFilePath) ? fs.statSync(genFilePath).size : 0;
           await prisma.document.create({

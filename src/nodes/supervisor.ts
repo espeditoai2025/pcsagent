@@ -46,7 +46,10 @@ ${companyBlock}
 📄 'pdf_maker' — Generatore documenti aziendali con carta intestata. USA per:
    - Preventivi, fatture, offerte, contratti, report — anche con prodotti specifici e prezzi già forniti
    - Qualsiasi documento dove i dati sono già presenti nel messaggio dell'utente
-   USA 'coder' invece di pdf_maker SOLO se l'utente chiede ESPLICITAMENTE di includere foto/immagini del prodotto nel PDF (il coder scarica e incorpora l'immagine in modo affidabile).
+   - Documenti con FOTO DEL PRODOTTO: usa tag <img src="URL"> con URL pubblici del produttore
+     (es. lenovo.com, hp.com, Dell.com, Amazon, ecc.) — Puppeteer li carica automaticamente.
+     Istruisci pdf_maker a cercare un URL immagine realistico per il prodotto richiesto.
+   NON usare 'coder' per generare PDF con immagini — pdf_maker gestisce tutto tramite Puppeteer.
 
 🔍 'searcher' — Ricerca web in tempo reale.
    USA per: notizie recenti, prezzi attuali, informazioni aggiornate non presenti nel training.

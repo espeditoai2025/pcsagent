@@ -106,7 +106,11 @@ ${userRequest}
    - Per report: includi sezioni chiare, eventuali statistiche fittizie coerenti, raccomandazioni
    - Testo in italiano, valuta Euro (€), formato date italiano (GG/MM/AAAA)
    - Numero documento: usa formato anno+sequenza con anno corrente (es. PRV-${annoCorrente}-001)
-   - VIETATO usare immagini in base64. Per immagini prodotto usa URL diretti pubblici (.jpg/.png/.webp) che Puppeteer caricherà automaticamente.
+   - VIETATO usare immagini in base64.
+   - FOTO PRODOTTO: se la richiesta include una foto o immagine del prodotto, usa URL pubblici REALI
+     del sito del produttore (es. https://www.lenovo.com, https://www.hp.com, https://www.dell.com,
+     https://images.unsplash.com per foto generiche). Usa <img src="URL" style="max-width:260px; max-height:180px; object-fit:contain; display:block; margin:0 auto;">
+     Puppeteer caricherà l'immagine automaticamente durante la conversione in PDF.
 
 RITORNA SOLO IL CODICE HTML COMPLETO. Nessun blocco markdown \`\`\`html, zero testo prima o dopo.
 Il tuo output viene salvato direttamente come file .html e renderizzato in PDF.`;

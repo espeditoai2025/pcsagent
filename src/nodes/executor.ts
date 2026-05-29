@@ -20,6 +20,7 @@ export const executorNode = async (state: AgentState): Promise<Partial<AgentStat
     console.error(`Esecuzione fallita: ${result.error}`);
     return {
       executionError: result.error,
+      messages: [new SystemMessage(`Esecuzione fallita: ${result.error}`)],
     };
   }
 };
