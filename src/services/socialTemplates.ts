@@ -146,14 +146,14 @@ def build_caption(row):
         if descr: info.append(f"Descrizione: {descr}")
         if has_sconto: info.append(f"Prezzo pieno: {_p(pieno)} euro, in offerta a {_p(promo)} euro")
         elif promo: info.append(f"Prezzo: {_p(promo)} euro")
-        cta = f"chiudi con una call-to-action verso {biz_name}"
-        if contatti_str:
-            cta += f", usando SOLO questi contatti reali (non inventarne altri): {contatti_str}"
         prompt = (
-            f"Sei il social media manager di {biz_name}. Scrivi UN post Facebook breve (max 4 righe) "
-            f"dal tono {ai_tone} per vendere questo prodotto. Evidenzia l'eventuale sconto, usa qualche "
-            f"emoji pertinente e {cta}. NON inventare nulla (incluso URL, numeri, indirizzi non forniti). "
-            f"Rispondi SOLO col testo del post, senza virgolette.\n\n" + "\n".join(info)
+            f"Sei il social media manager di {biz_name}. Scrivi un post Facebook che vende questo prodotto.\n"
+            f"FORMATTAZIONE IMPORTANTE: testo ben spaziato e leggibile, NON un unico blocco. Struttura su piu "
+            f"sezioni separate da una RIGA VUOTA: 1) un gancio iniziale accattivante; 2) l'offerta col prezzo "
+            f"(sconto in evidenza); 3) una breve call-to-action (es. 'Passa a trovarci!'). Usa qualche emoji.\n"
+            f"Tono: {ai_tone}. NON inventare nulla. NON scrivere indirizzo, telefono, WhatsApp o sito web "
+            f"(li aggiungo io sotto). Rispondi SOLO col testo del post, senza virgolette.\n\n"
+            + "\n".join(info)
         )
         try:
             air = requests.post("https://openrouter.ai/api/v1/chat/completions",
@@ -183,9 +183,14 @@ def build_caption(row):
         elif promo: parts.append(f"a soli {_p(promo)}€")
         if descr: parts.append(descr)
         caption = " — ".join([x for x in parts if x]) or "Nuovo prodotto disponibile!"
-        # Nel fallback (no-AI) aggiungi i contatti reali, se presenti
-        if contatti_str:
-            caption += "\n\n" + biz_name + (f" — {contatti_str}" if contatti_str else "")
+
+    # Footer contatti su righe separate (formattazione pulita) — per tutte le modalita
+    footer = []
+    if biz_address: footer.append(f"📍 {biz_address}")
+    if biz_whatsapp: footer.append(f"📲 {biz_whatsapp}")
+    if biz_website: footer.append(f"🌐 {biz_website}")
+    if footer:
+        caption = caption.rstrip() + "\n\n" + "\n".join(footer)
 
     return caption, image_url
 
