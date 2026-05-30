@@ -1,24 +1,19 @@
 # Immagine di esecuzione per il nodo "coder" dell'agente.
 # Contiene tutte le librerie promesse nel prompt del coder (src/nodes/coder.ts).
+# Base: immagine ufficiale Playwright (Chromium + toolchain gia presenti).
 # Ricostruzione sul VPS:
 #   docker build -t pcsai-python:latest docker/pcsai-python
-FROM python:3.12-slim-bookworm
+FROM mcr.microsoft.com/playwright/python:v1.40.0-jammy
 
 ENV PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1 \
-    PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+    PIP_NO_CACHE_DIR=1
 
-# Dipendenze di sistema:
-# - WeasyPrint: pango / cairo / gdk-pixbuf / libffi / shared-mime-info
-# - font per il rendering PDF
-# - psycopg2: libpq-dev + build-essential
+# Dipendenze di sistema per WeasyPrint / pycairo / pango (compilazione da sorgente)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    libpq-dev \
-    libpango-1.0-0 libpangocairo-1.0-0 libcairo2 libgdk-pixbuf-2.0-0 \
-    libffi-dev shared-mime-info \
-    fonts-liberation fonts-dejavu-core \
-    curl ca-certificates \
+    build-essential python3-dev pkg-config \
+    libffi-dev libssl-dev \
+    libcairo2-dev libpango1.0-dev libgdk-pixbuf2.0-dev libglib2.0-dev \
+    shared-mime-info \
     && rm -rf /var/lib/apt/lists/*
 
 # Librerie Python (allineate al prompt del coder)
@@ -27,12 +22,11 @@ RUN pip install --no-cache-dir \
     requests beautifulsoup4 lxml html5lib \
     matplotlib seaborn pillow \
     weasyprint xhtml2pdf reportlab pypdf \
-    pyyaml cryptography \
-    playwright
+    pyyaml cryptography playwright
 
-# Chromium + dipendenze di sistema installati in /ms-playwright.
+# Chromium e gia presente nella base image; riallinea al playwright installato via pip.
 # Il codice generato deve usare p.chromium.launch() (auto-detect), NON un percorso hardcoded.
-RUN playwright install --with-deps chromium
+RUN playwright install chromium
 
 WORKDIR /app/data
 
