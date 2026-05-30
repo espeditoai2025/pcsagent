@@ -8,6 +8,10 @@ import { chargeUser } from "./tokenMeter";
 
 const TICK_MS = 60_000;
 
+// Job attualmente in esecuzione: evita che un tick successivo (ogni 60s) ri-prenda
+// un job la cui esecuzione dura piu del tick e lo ripubblichi (doppione).
+const running = new Set<string>();
+
 /** Calcola il prossimo orario di esecuzione da una cron expression + timezone. */
 export function computeNextRun(cronExpression: string, timezone: string, from: Date = new Date()): Date | null {
   try {
@@ -154,7 +158,14 @@ async function tick(prisma: PrismaClient): Promise<void> {
     take: 5,
   });
   for (const j of due) {
-    await runJob(prisma, j);
+    // Se e gia in esecuzione (run lungo che sfora il tick), salta: niente doppioni.
+    if (running.has(j.id)) continue;
+    running.add(j.id);
+    try {
+      await runJob(prisma, j);
+    } finally {
+      running.delete(j.id);
+    }
   }
 }
 
