@@ -1,0 +1,595 @@
+{
+  "fetchedAt": "2026-05-30T21:25:57.884Z",
+  "source": "https://openrouter.ai/api/v1/models",
+  "count": 84,
+  "models": [
+    {
+      "id": "openai/gpt-oss-20b",
+      "name": "OpenAI: gpt-oss-20b",
+      "in_usd_per_m": 0.029,
+      "out_usd_per_m": 0.14,
+      "context": 131072
+    },
+    {
+      "id": "openai/gpt-oss-120b",
+      "name": "OpenAI: gpt-oss-120b",
+      "in_usd_per_m": 0.039,
+      "out_usd_per_m": 0.18,
+      "context": 131072
+    },
+    {
+      "id": "openai/gpt-oss-safeguard-20b",
+      "name": "OpenAI: gpt-oss-safeguard-20b",
+      "in_usd_per_m": 0.075,
+      "out_usd_per_m": 0.3,
+      "context": 131072
+    },
+    {
+      "id": "google/gemini-2.0-flash-lite-001",
+      "name": "Google: Gemini 2.0 Flash Lite",
+      "in_usd_per_m": 0.075,
+      "out_usd_per_m": 0.3,
+      "context": 1048576
+    },
+    {
+      "id": "google/gemini-2.5-flash-lite-preview-09-2025",
+      "name": "Google: Gemini 2.5 Flash Lite Preview 09-2025",
+      "in_usd_per_m": 0.1,
+      "out_usd_per_m": 0.4,
+      "context": 1048576
+    },
+    {
+      "id": "openai/gpt-5-nano",
+      "name": "OpenAI: GPT-5 Nano",
+      "in_usd_per_m": 0.05,
+      "out_usd_per_m": 0.4,
+      "context": 400000
+    },
+    {
+      "id": "google/gemini-2.5-flash-lite",
+      "name": "Google: Gemini 2.5 Flash Lite",
+      "in_usd_per_m": 0.1,
+      "out_usd_per_m": 0.4,
+      "context": 1048576
+    },
+    {
+      "id": "openai/gpt-4.1-nano",
+      "name": "OpenAI: GPT-4.1 Nano",
+      "in_usd_per_m": 0.1,
+      "out_usd_per_m": 0.4,
+      "context": 1047576
+    },
+    {
+      "id": "google/gemini-2.0-flash-001",
+      "name": "Google: Gemini 2.0 Flash",
+      "in_usd_per_m": 0.1,
+      "out_usd_per_m": 0.4,
+      "context": 1048576
+    },
+    {
+      "id": "openai/gpt-4o-mini-search-preview",
+      "name": "OpenAI: GPT-4o-mini Search Preview",
+      "in_usd_per_m": 0.15,
+      "out_usd_per_m": 0.6,
+      "context": 128000
+    },
+    {
+      "id": "openai/gpt-4o-mini-2024-07-18",
+      "name": "OpenAI: GPT-4o-mini (2024-07-18)",
+      "in_usd_per_m": 0.15,
+      "out_usd_per_m": 0.6,
+      "context": 128000
+    },
+    {
+      "id": "openai/gpt-4o-mini",
+      "name": "OpenAI: GPT-4o-mini",
+      "in_usd_per_m": 0.15,
+      "out_usd_per_m": 0.6,
+      "context": 128000
+    },
+    {
+      "id": "openai/gpt-5.4-nano",
+      "name": "OpenAI: GPT-5.4 Nano",
+      "in_usd_per_m": 0.2,
+      "out_usd_per_m": 1.25,
+      "context": 400000
+    },
+    {
+      "id": "anthropic/claude-3-haiku",
+      "name": "Anthropic: Claude 3 Haiku",
+      "in_usd_per_m": 0.25,
+      "out_usd_per_m": 1.25,
+      "context": 200000
+    },
+    {
+      "id": "google/gemini-3.1-flash-lite",
+      "name": "Google: Gemini 3.1 Flash Lite",
+      "in_usd_per_m": 0.25,
+      "out_usd_per_m": 1.5,
+      "context": 1048576
+    },
+    {
+      "id": "google/gemini-3.1-flash-lite-preview",
+      "name": "Google: Gemini 3.1 Flash Lite Preview",
+      "in_usd_per_m": 0.25,
+      "out_usd_per_m": 1.5,
+      "context": 1048576
+    },
+    {
+      "id": "openai/gpt-3.5-turbo",
+      "name": "OpenAI: GPT-3.5 Turbo",
+      "in_usd_per_m": 0.5,
+      "out_usd_per_m": 1.5,
+      "context": 16385
+    },
+    {
+      "id": "openai/gpt-4.1-mini",
+      "name": "OpenAI: GPT-4.1 Mini",
+      "in_usd_per_m": 0.4,
+      "out_usd_per_m": 1.6,
+      "context": 1047576
+    },
+    {
+      "id": "openai/gpt-5.1-codex-mini",
+      "name": "OpenAI: GPT-5.1-Codex-Mini",
+      "in_usd_per_m": 0.25,
+      "out_usd_per_m": 2,
+      "context": 400000
+    },
+    {
+      "id": "openai/gpt-5-image-mini",
+      "name": "OpenAI: GPT-5 Image Mini",
+      "in_usd_per_m": 2.5,
+      "out_usd_per_m": 2,
+      "context": 400000
+    },
+    {
+      "id": "openai/gpt-5-mini",
+      "name": "OpenAI: GPT-5 Mini",
+      "in_usd_per_m": 0.25,
+      "out_usd_per_m": 2,
+      "context": 400000
+    },
+    {
+      "id": "openai/gpt-3.5-turbo-0613",
+      "name": "OpenAI: GPT-3.5 Turbo (older v0613)",
+      "in_usd_per_m": 1,
+      "out_usd_per_m": 2,
+      "context": 4095
+    },
+    {
+      "id": "openai/gpt-3.5-turbo-instruct",
+      "name": "OpenAI: GPT-3.5 Turbo Instruct",
+      "in_usd_per_m": 1.5,
+      "out_usd_per_m": 2,
+      "context": 4095
+    },
+    {
+      "id": "openai/gpt-audio-mini",
+      "name": "OpenAI: GPT Audio Mini",
+      "in_usd_per_m": 0.6,
+      "out_usd_per_m": 2.4,
+      "context": 128000
+    },
+    {
+      "id": "google/gemini-2.5-flash-image",
+      "name": "Google: Nano Banana (Gemini 2.5 Flash Image)",
+      "in_usd_per_m": 0.3,
+      "out_usd_per_m": 2.5,
+      "context": 32768
+    },
+    {
+      "id": "google/gemini-2.5-flash",
+      "name": "Google: Gemini 2.5 Flash",
+      "in_usd_per_m": 0.3,
+      "out_usd_per_m": 2.5,
+      "context": 1048576
+    },
+    {
+      "id": "google/gemini-3.1-flash-image-preview",
+      "name": "Google: Nano Banana 2 (Gemini 3.1 Flash Image Preview)",
+      "in_usd_per_m": 0.5,
+      "out_usd_per_m": 3,
+      "context": 131072
+    },
+    {
+      "id": "google/gemini-3-flash-preview",
+      "name": "Google: Gemini 3 Flash Preview",
+      "in_usd_per_m": 0.5,
+      "out_usd_per_m": 3,
+      "context": 1048576
+    },
+    {
+      "id": "anthropic/claude-3.5-haiku",
+      "name": "Anthropic: Claude 3.5 Haiku",
+      "in_usd_per_m": 0.8,
+      "out_usd_per_m": 4,
+      "context": 200000
+    },
+    {
+      "id": "openai/gpt-3.5-turbo-16k",
+      "name": "OpenAI: GPT-3.5 Turbo 16k",
+      "in_usd_per_m": 3,
+      "out_usd_per_m": 4,
+      "context": 16385
+    },
+    {
+      "id": "openai/gpt-5.4-mini",
+      "name": "OpenAI: GPT-5.4 Mini",
+      "in_usd_per_m": 0.75,
+      "out_usd_per_m": 4.5,
+      "context": 400000
+    },
+    {
+      "id": "anthropic/claude-haiku-4.5",
+      "name": "Anthropic: Claude Haiku 4.5",
+      "in_usd_per_m": 1,
+      "out_usd_per_m": 5,
+      "context": 200000
+    },
+    {
+      "id": "openai/gpt-4.1",
+      "name": "OpenAI: GPT-4.1",
+      "in_usd_per_m": 2,
+      "out_usd_per_m": 8,
+      "context": 1047576
+    },
+    {
+      "id": "google/gemini-3.5-flash",
+      "name": "Google: Gemini 3.5 Flash",
+      "in_usd_per_m": 1.5,
+      "out_usd_per_m": 9,
+      "context": 1048576
+    },
+    {
+      "id": "openai/gpt-audio",
+      "name": "OpenAI: GPT Audio",
+      "in_usd_per_m": 2.5,
+      "out_usd_per_m": 10,
+      "context": 128000
+    },
+    {
+      "id": "openai/gpt-5.1-codex-max",
+      "name": "OpenAI: GPT-5.1-Codex-Max",
+      "in_usd_per_m": 1.25,
+      "out_usd_per_m": 10,
+      "context": 400000
+    },
+    {
+      "id": "openai/gpt-5.1",
+      "name": "OpenAI: GPT-5.1",
+      "in_usd_per_m": 1.25,
+      "out_usd_per_m": 10,
+      "context": 400000
+    },
+    {
+      "id": "openai/gpt-5.1-chat",
+      "name": "OpenAI: GPT-5.1 Chat",
+      "in_usd_per_m": 1.25,
+      "out_usd_per_m": 10,
+      "context": 128000
+    },
+    {
+      "id": "openai/gpt-5.1-codex",
+      "name": "OpenAI: GPT-5.1-Codex",
+      "in_usd_per_m": 1.25,
+      "out_usd_per_m": 10,
+      "context": 400000
+    },
+    {
+      "id": "openai/gpt-5-image",
+      "name": "OpenAI: GPT-5 Image",
+      "in_usd_per_m": 10,
+      "out_usd_per_m": 10,
+      "context": 400000
+    },
+    {
+      "id": "openai/gpt-5-codex",
+      "name": "OpenAI: GPT-5 Codex",
+      "in_usd_per_m": 1.25,
+      "out_usd_per_m": 10,
+      "context": 400000
+    },
+    {
+      "id": "openai/gpt-5-chat",
+      "name": "OpenAI: GPT-5 Chat",
+      "in_usd_per_m": 1.25,
+      "out_usd_per_m": 10,
+      "context": 128000
+    },
+    {
+      "id": "openai/gpt-5",
+      "name": "OpenAI: GPT-5",
+      "in_usd_per_m": 1.25,
+      "out_usd_per_m": 10,
+      "context": 400000
+    },
+    {
+      "id": "google/gemini-2.5-pro",
+      "name": "Google: Gemini 2.5 Pro",
+      "in_usd_per_m": 1.25,
+      "out_usd_per_m": 10,
+      "context": 1048576
+    },
+    {
+      "id": "google/gemini-2.5-pro-preview",
+      "name": "Google: Gemini 2.5 Pro Preview 06-05",
+      "in_usd_per_m": 1.25,
+      "out_usd_per_m": 10,
+      "context": 1048576
+    },
+    {
+      "id": "google/gemini-2.5-pro-preview-05-06",
+      "name": "Google: Gemini 2.5 Pro Preview 05-06",
+      "in_usd_per_m": 1.25,
+      "out_usd_per_m": 10,
+      "context": 1048576
+    },
+    {
+      "id": "openai/gpt-4o-search-preview",
+      "name": "OpenAI: GPT-4o Search Preview",
+      "in_usd_per_m": 2.5,
+      "out_usd_per_m": 10,
+      "context": 128000
+    },
+    {
+      "id": "openai/gpt-4o-2024-11-20",
+      "name": "OpenAI: GPT-4o (2024-11-20)",
+      "in_usd_per_m": 2.5,
+      "out_usd_per_m": 10,
+      "context": 128000
+    },
+    {
+      "id": "openai/gpt-4o-2024-08-06",
+      "name": "OpenAI: GPT-4o (2024-08-06)",
+      "in_usd_per_m": 2.5,
+      "out_usd_per_m": 10,
+      "context": 128000
+    },
+    {
+      "id": "openai/gpt-4o",
+      "name": "OpenAI: GPT-4o",
+      "in_usd_per_m": 2.5,
+      "out_usd_per_m": 10,
+      "context": 128000
+    },
+    {
+      "id": "google/gemini-3.1-pro-preview-customtools",
+      "name": "Google: Gemini 3.1 Pro Preview Custom Tools",
+      "in_usd_per_m": 2,
+      "out_usd_per_m": 12,
+      "context": 1048756
+    },
+    {
+      "id": "google/gemini-3.1-pro-preview",
+      "name": "Google: Gemini 3.1 Pro Preview",
+      "in_usd_per_m": 2,
+      "out_usd_per_m": 12,
+      "context": 1048576
+    },
+    {
+      "id": "google/gemini-3-pro-image-preview",
+      "name": "Google: Nano Banana Pro (Gemini 3 Pro Image Preview)",
+      "in_usd_per_m": 2,
+      "out_usd_per_m": 12,
+      "context": 65536
+    },
+    {
+      "id": "openai/gpt-5.3-chat",
+      "name": "OpenAI: GPT-5.3 Chat",
+      "in_usd_per_m": 1.75,
+      "out_usd_per_m": 14,
+      "context": 128000
+    },
+    {
+      "id": "openai/gpt-5.3-codex",
+      "name": "OpenAI: GPT-5.3-Codex",
+      "in_usd_per_m": 1.75,
+      "out_usd_per_m": 14,
+      "context": 400000
+    },
+    {
+      "id": "openai/gpt-5.2-codex",
+      "name": "OpenAI: GPT-5.2-Codex",
+      "in_usd_per_m": 1.75,
+      "out_usd_per_m": 14,
+      "context": 400000
+    },
+    {
+      "id": "openai/gpt-5.2-chat",
+      "name": "OpenAI: GPT-5.2 Chat",
+      "in_usd_per_m": 1.75,
+      "out_usd_per_m": 14,
+      "context": 128000
+    },
+    {
+      "id": "openai/gpt-5.2",
+      "name": "OpenAI: GPT-5.2",
+      "in_usd_per_m": 1.75,
+      "out_usd_per_m": 14,
+      "context": 400000
+    },
+    {
+      "id": "openai/gpt-5.4-image-2",
+      "name": "OpenAI: GPT-5.4 Image 2",
+      "in_usd_per_m": 8,
+      "out_usd_per_m": 15,
+      "context": 272000
+    },
+    {
+      "id": "openai/gpt-5.4",
+      "name": "OpenAI: GPT-5.4",
+      "in_usd_per_m": 2.5,
+      "out_usd_per_m": 15,
+      "context": 1050000
+    },
+    {
+      "id": "anthropic/claude-sonnet-4.6",
+      "name": "Anthropic: Claude Sonnet 4.6",
+      "in_usd_per_m": 3,
+      "out_usd_per_m": 15,
+      "context": 1000000
+    },
+    {
+      "id": "anthropic/claude-sonnet-4.5",
+      "name": "Anthropic: Claude Sonnet 4.5",
+      "in_usd_per_m": 3,
+      "out_usd_per_m": 15,
+      "context": 1000000
+    },
+    {
+      "id": "anthropic/claude-sonnet-4",
+      "name": "Anthropic: Claude Sonnet 4",
+      "in_usd_per_m": 3,
+      "out_usd_per_m": 15,
+      "context": 1000000
+    },
+    {
+      "id": "openai/gpt-4o-2024-05-13",
+      "name": "OpenAI: GPT-4o (2024-05-13)",
+      "in_usd_per_m": 5,
+      "out_usd_per_m": 15,
+      "context": 128000
+    },
+    {
+      "id": "anthropic/claude-opus-4.8",
+      "name": "Anthropic: Claude Opus 4.8",
+      "in_usd_per_m": 5,
+      "out_usd_per_m": 25,
+      "context": 1000000
+    },
+    {
+      "id": "anthropic/claude-opus-4.7",
+      "name": "Anthropic: Claude Opus 4.7",
+      "in_usd_per_m": 5,
+      "out_usd_per_m": 25,
+      "context": 1000000
+    },
+    {
+      "id": "anthropic/claude-opus-4.6",
+      "name": "Anthropic: Claude Opus 4.6",
+      "in_usd_per_m": 5,
+      "out_usd_per_m": 25,
+      "context": 1000000
+    },
+    {
+      "id": "anthropic/claude-opus-4.5",
+      "name": "Anthropic: Claude Opus 4.5",
+      "in_usd_per_m": 5,
+      "out_usd_per_m": 25,
+      "context": 200000
+    },
+    {
+      "id": "openai/gpt-chat-latest",
+      "name": "OpenAI: GPT Chat Latest",
+      "in_usd_per_m": 5,
+      "out_usd_per_m": 30,
+      "context": 400000
+    },
+    {
+      "id": "openai/gpt-5.5",
+      "name": "OpenAI: GPT-5.5",
+      "in_usd_per_m": 5,
+      "out_usd_per_m": 30,
+      "context": 1050000
+    },
+    {
+      "id": "openai/gpt-4-turbo",
+      "name": "OpenAI: GPT-4 Turbo",
+      "in_usd_per_m": 10,
+      "out_usd_per_m": 30,
+      "context": 128000
+    },
+    {
+      "id": "openai/gpt-4-turbo-preview",
+      "name": "OpenAI: GPT-4 Turbo Preview",
+      "in_usd_per_m": 10,
+      "out_usd_per_m": 30,
+      "context": 128000
+    },
+    {
+      "id": "openai/gpt-4-1106-preview",
+      "name": "OpenAI: GPT-4 Turbo (older v1106)",
+      "in_usd_per_m": 10,
+      "out_usd_per_m": 30,
+      "context": 128000
+    },
+    {
+      "id": "anthropic/claude-opus-4.8-fast",
+      "name": "Anthropic: Claude Opus 4.8 (Fast)",
+      "in_usd_per_m": 10,
+      "out_usd_per_m": 50,
+      "context": 1000000
+    },
+    {
+      "id": "openai/gpt-4-0314",
+      "name": "OpenAI: GPT-4 (older v0314)",
+      "in_usd_per_m": 30,
+      "out_usd_per_m": 60,
+      "context": 8191
+    },
+    {
+      "id": "openai/gpt-4",
+      "name": "OpenAI: GPT-4",
+      "in_usd_per_m": 30,
+      "out_usd_per_m": 60,
+      "context": 8191
+    },
+    {
+      "id": "anthropic/claude-opus-4.1",
+      "name": "Anthropic: Claude Opus 4.1",
+      "in_usd_per_m": 15,
+      "out_usd_per_m": 75,
+      "context": 200000
+    },
+    {
+      "id": "anthropic/claude-opus-4",
+      "name": "Anthropic: Claude Opus 4",
+      "in_usd_per_m": 15,
+      "out_usd_per_m": 75,
+      "context": 200000
+    },
+    {
+      "id": "openai/gpt-5-pro",
+      "name": "OpenAI: GPT-5 Pro",
+      "in_usd_per_m": 15,
+      "out_usd_per_m": 120,
+      "context": 400000
+    },
+    {
+      "id": "anthropic/claude-opus-4.7-fast",
+      "name": "Anthropic: Claude Opus 4.7 (Fast)",
+      "in_usd_per_m": 30,
+      "out_usd_per_m": 150,
+      "context": 1000000
+    },
+    {
+      "id": "anthropic/claude-opus-4.6-fast",
+      "name": "Anthropic: Claude Opus 4.6 (Fast)",
+      "in_usd_per_m": 30,
+      "out_usd_per_m": 150,
+      "context": 1000000
+    },
+    {
+      "id": "openai/gpt-5.2-pro",
+      "name": "OpenAI: GPT-5.2 Pro",
+      "in_usd_per_m": 21,
+      "out_usd_per_m": 168,
+      "context": 400000
+    },
+    {
+      "id": "openai/gpt-5.5-pro",
+      "name": "OpenAI: GPT-5.5 Pro",
+      "in_usd_per_m": 30,
+      "out_usd_per_m": 180,
+      "context": 1050000
+    },
+    {
+      "id": "openai/gpt-5.4-pro",
+      "name": "OpenAI: GPT-5.4 Pro",
+      "in_usd_per_m": 30,
+      "out_usd_per_m": 180,
+      "context": 1050000
+    }
+  ]
+}

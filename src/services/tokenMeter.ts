@@ -5,6 +5,8 @@ process.env.LANGCHAIN_CALLBACKS_BACKGROUND = "false";
 import { AsyncLocalStorage } from "async_hooks";
 import { BaseCallbackHandler } from "@langchain/core/callbacks/base";
 import { PrismaClient } from "@prisma/client";
+import { getPriceMap, FALLBACK_BASE_OUT } from "./pricing";
+import { getLevelModels } from "./aiLevels";
 
 /**
  * Conteggio token PER-AGENTE pesato per modello.
@@ -88,10 +90,21 @@ export async function chargeUser(
 ): Promise<number> {
   if (!userId || entries.length === 0) return 0;
 
+  // Peso = COSTO REALE: prezzo output del modello / prezzo output del modello base (livello 1).
+  const priceMap = await getPriceMap();
+  let baseOut = FALLBACK_BASE_OUT;
+  try {
+    const baseModel = (await getLevelModels(prisma))[1];
+    baseOut = priceMap[baseModel]?.outP || FALLBACK_BASE_OUT;
+  } catch {
+    /* fallback */
+  }
+  const weightOf = (model: string) => (priceMap[model]?.outP || baseOut) / baseOut;
+
   const byModel: Record<string, { prompt: number; completion: number; credits: number }> = {};
   let total = 0;
   for (const e of entries) {
-    const credits = Math.ceil((e.prompt + e.completion) * weightFor(e.model));
+    const credits = Math.ceil((e.prompt + e.completion) * weightOf(e.model));
     total += credits;
     const m = (byModel[e.model] ||= { prompt: 0, completion: 0, credits: 0 });
     m.prompt += e.prompt;
