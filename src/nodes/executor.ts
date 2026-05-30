@@ -63,7 +63,7 @@ export const executorNode = async (state: AgentState): Promise<Partial<AgentStat
   }
 
   console.log(`Executing code (Attempt ${state.iterations})...`);
-  const result = await executePythonScript(state.pythonCode);
+  const result = await executePythonScript(state.pythonCode, { workspace: state.userData?.id });
 
   if (result.success) {
     const output = cleanExecutionOutput(result.output);

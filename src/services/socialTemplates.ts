@@ -42,6 +42,8 @@ biz_address = os.environ.get("BIZ_ADDRESS", "").strip()
 biz_whatsapp = os.environ.get("BIZ_WHATSAPP", "").strip()
 biz_website = os.environ.get("BIZ_WEBSITE", "").strip()
 
+USAGE = {"p": 0, "c": 0}  # token AI accumulati (per il conteggio crediti)
+
 if not page_id or not token:
     print("ERRORE: credenziali Facebook mancanti (FB_PAGE_ID / FB_ACCESS_TOKEN).")
     sys.exit(1)
@@ -162,7 +164,11 @@ def build_caption(row):
                 json={"model": ai_model, "temperature": 0.8,
                       "messages": [{"role": "user", "content": prompt}]}, timeout=45)
             if air.status_code == 200:
-                caption = air.json()["choices"][0]["message"]["content"].strip().strip('"')
+                _aj = air.json()
+                caption = _aj["choices"][0]["message"]["content"].strip().strip('"')
+                _u = _aj.get("usage", {}) or {}
+                USAGE["p"] += _u.get("prompt_tokens", 0) or 0
+                USAGE["c"] += _u.get("completion_tokens", 0) or 0
         except Exception as e:
             print(f"(AI caption fallita, uso fallback: {e})")
 
@@ -217,5 +223,6 @@ for i in indices:
         print(f"POST_ERR riga {i}: {e}")
 
 print(f"\nRIEPILOGO: {n_ok}/{len(indices)} pubblicati su {biz_name}")
+print(f"AI_USAGE {USAGE['p']} {USAGE['c']} {ai_model}")
 sys.exit(0 if n_ok > 0 else 1)
 `;

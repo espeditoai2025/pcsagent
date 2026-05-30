@@ -3,6 +3,8 @@ import parser from "cron-parser";
 import { executePythonScript } from "./dockerService";
 import { decryptSecret } from "../utils/crypto";
 import { FACEBOOK_POST_SCRIPT } from "./socialTemplates";
+import { modelForLevel } from "./aiLevels";
+import { chargeUser } from "./tokenMeter";
 
 const TICK_MS = 60_000;
 
@@ -59,7 +61,7 @@ async function runJob(prisma: PrismaClient, job: any): Promise<void> {
       SELECTION_MODE: job.selectionMode || "SEQUENTIAL",
       CAPTION_TEMPLATE: job.captionTemplate || "",
       AI_CAPTION: job.aiCaption ? "true" : "false",
-      AI_MODEL: job.aiModel || "",
+      AI_MODEL: await modelForLevel(prisma, job.aiLevel),
       OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY || "",
       COMPANY_NAME: companyName || "",
       BIZ_NAME: job.bizName || "",
@@ -68,7 +70,14 @@ async function runJob(prisma: PrismaClient, job: any): Promise<void> {
       BIZ_WEBSITE: job.bizWebsite || "",
     };
 
-    const result = await executePythonScript(FACEBOOK_POST_SCRIPT, { env });
+    const result = await executePythonScript(FACEBOOK_POST_SCRIPT, { env, workspace: job.userId });
+
+    // Conteggia i token della caption AI (riportati dallo script come "AI_USAGE p c model")
+    const um = (result.output || "").match(/AI_USAGE (\d+) (\d+) (\S+)/);
+    if (um) {
+      await chargeUser(prisma, job.userId, [{ model: um[3], prompt: parseInt(um[1], 10), completion: parseInt(um[2], 10) }], "social").catch(() => {});
+    }
+
     const out = (result.output || "").slice(0, 2000);
     const ok = result.success && out.includes("POST_OK");
 

@@ -20,11 +20,20 @@ dotenv.config();
 const app = new Hono();
 const prisma = new PrismaClient();
 
+// Cartella file isolata per-utente (multi-tenant)
+const SHARED = path.resolve(__dirname, "../shared_data");
+function safeWs(id?: string): string {
+  return (id || "").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 64);
+}
+function userDir(userId?: string): string {
+  const ws = safeWs(userId);
+  return ws ? path.join(SHARED, ws) : SHARED;
+}
+
 // Funzione di utilità per elaborare i documenti caricati per il RAG
-async function processDocumentForRag(documentId: string, filename: string, mimeType: string) {
+async function processDocumentForRag(documentId: string, filename: string, mimeType: string, userId?: string) {
   try {
-    const sharedDataPath = path.resolve(__dirname, "../shared_data");
-    const filePath = path.join(sharedDataPath, filename);
+    const filePath = path.join(userDir(userId), filename);
     let text = "";
 
     if (mimeType === 'application/pdf') {
@@ -52,12 +61,12 @@ app.get("/", (c) => {
 // Endpoint per scaricare i file generati dalla Sandbox
 app.get("/api/files/:filename", async (c) => {
   const filename = c.req.param("filename");
-  // La cartella condivisa con il container Docker
-  const sharedDataPath = path.resolve(__dirname, "../shared_data");
-  const filePath = path.join(sharedDataPath, filename);
+  // Cartella dell'utente (passata dal proxy frontend autenticato come ?u=<userId>)
+  const dir = userDir(c.req.query("u"));
+  const filePath = path.join(dir, filename);
 
-  // Previene path traversal
-  if (!filePath.startsWith(sharedDataPath)) {
+  // Previene path traversal (il file deve stare dentro la cartella dell'utente)
+  if (!filePath.startsWith(dir + path.sep)) {
     return c.json({ error: "Access denied" }, 403);
   }
 
@@ -92,15 +101,17 @@ app.post("/api/upload", async (c) => {
 
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
-    
-    const sharedDataPath = path.resolve(__dirname, "../shared_data");
-    if (!fs.existsSync(sharedDataPath)) {
-      fs.mkdirSync(sharedDataPath, { recursive: true });
+
+    // Cartella isolata dell'utente (userId passato dal proxy frontend)
+    const uId = typeof body['userId'] === 'string' ? (body['userId'] as string) : undefined;
+    const dir = userDir(uId);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
     }
 
     // Genera un nome file univoco
     const uniqueName = `${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.\-_]/g, '')}`;
-    const filePath = path.join(sharedDataPath, uniqueName);
+    const filePath = path.join(dir, uniqueName);
 
     fs.writeFileSync(filePath, buffer);
 
@@ -152,7 +163,7 @@ app.post("/api/chat", async (c) => {
         await stream.writeSSE({ data: JSON.stringify({ type: "status", message: "Sto ascoltando la nota vocale..." }) });
         
         try {
-          const audioBuffer = fs.readFileSync(path.join(__dirname, '../shared_data', attachment.filename));
+          const audioBuffer = fs.readFileSync(path.join(userDir(userId), attachment.filename));
           const formData = new FormData();
           const blob = new Blob([audioBuffer], { type: attachment.type });
           formData.append('file', blob, attachment.filename);
@@ -222,7 +233,7 @@ app.post("/api/chat", async (c) => {
 
       // 3. Salva l'allegato nel DB se presente
       if (attachment) {
-        const attachPath = path.join(path.resolve(__dirname, "../shared_data"), attachment.filename);
+        const attachPath = path.join(userDir(userId), attachment.filename);
         const attachSize = fs.existsSync(attachPath) ? fs.statSync(attachPath).size : 0;
         const docRecord = await prisma.document.create({
           data: {
@@ -236,7 +247,7 @@ app.post("/api/chat", async (c) => {
 
         // 3.5 Manda in background l'estrazione RAG
         if (attachment.type === 'application/pdf' || attachment.type === 'text/plain' || attachment.type === 'text/csv') {
-          processDocumentForRag(docRecord.id, attachment.filename, attachment.type).catch(console.error);
+          processDocumentForRag(docRecord.id, attachment.filename, attachment.type, userId).catch(console.error);
         }
       }
 
@@ -333,7 +344,7 @@ app.post("/api/chat", async (c) => {
             fileType = 'image/' + ext.substring(1);
           else if (ext === '.csv') fileType = 'text/csv';
 
-          const genFilePath = path.join(path.resolve(__dirname, "../shared_data"), generatedFilename);
+          const genFilePath = path.join(userDir(userId), generatedFilename);
           const genFileSize = fs.existsSync(genFilePath) ? fs.statSync(genFilePath).size : 0;
           await prisma.document.create({
             data: {

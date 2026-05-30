@@ -1,6 +1,8 @@
 import { AgentState } from "../state";
 import { routerModel } from "../services/llm";
 import { computeNextRun } from "../services/scheduler";
+import { modelForLevel } from "../services/aiLevels";
+import { chargeUser } from "../services/tokenMeter";
 import { executePythonScript } from "../services/dockerService";
 import { FACEBOOK_POST_SCRIPT } from "../services/socialTemplates";
 import { listFacebookPages, getTokenPermissions, FacebookPage } from "../services/facebook";
@@ -137,6 +139,7 @@ Il token è GIÀ configurato e l'utente può amministrare PIÙ pagine.
         SELECTION_MODE: parsed.selectionMode || "SEQUENTIAL",
         CAPTION_TEMPLATE: parsed.captionTemplate || "",
         AI_CAPTION: useAi ? "true" : "false",
+        AI_MODEL: await modelForLevel(prisma, 1),
         OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY || "",
         // Per il test da chat uso i dati del profilo come branding (il pannello permette override per-job)
         COMPANY_NAME: userData.companyName || "",
@@ -145,7 +148,9 @@ Il token è GIÀ configurato e l'utente può amministrare PIÙ pagine.
         BIZ_WHATSAPP: userData.phone || "",
         BIZ_WEBSITE: userData.website || "",
       };
-      const result = await executePythonScript(FACEBOOK_POST_SCRIPT, { env });
+      const result = await executePythonScript(FACEBOOK_POST_SCRIPT, { env, workspace: userId });
+      const um = (result.output || "").match(/AI_USAGE (\d+) (\d+) (\S+)/);
+      if (um) await chargeUser(prisma, userId, [{ model: um[3], prompt: parseInt(um[1], 10), completion: parseInt(um[2], 10) }], "social").catch(() => {});
       const out = (result.output || "").trim();
       if (result.success && out.includes("POST_OK")) {
         return { finalResult: `✅ Post di test pubblicato sulla pagina **${target.name}**!\n\nControllala per vederlo. Se è ok, dimmi come programmare le pubblicazioni automatiche (es. "ogni giorno alle 9 un prodotto dal mio Google Sheet su ${target.name}").` };
@@ -179,6 +184,7 @@ Il token è GIÀ configurato e l'utente può amministrare PIÙ pagine.
         sourceRef: parsed.sourceRef,
         captionTemplate: parsed.captionTemplate || null,
         aiCaption: parsed.sourceType !== "TEXT",
+        aiLevel: 1,
         postsPerRun: parsed.postsPerRun && parsed.postsPerRun > 0 ? Math.min(parsed.postsPerRun, 10) : 1,
         selectionMode: parsed.selectionMode || "SEQUENTIAL",
         nextRunAt,
