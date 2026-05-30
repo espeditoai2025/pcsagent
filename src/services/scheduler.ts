@@ -20,16 +20,34 @@ export function computeNextRun(cronExpression: string, timezone: string, from: D
 async function runJob(prisma: PrismaClient, job: any): Promise<void> {
   const run = await prisma.scheduledJobRun.create({ data: { jobId: job.id, status: "OK" } });
   try {
-    const user = await prisma.user.findUnique({
-      where: { id: job.userId },
-      select: { fbPageId: true, fbAccessToken: true, companyName: true },
-    });
-    // La pagina target e quella del job (multi-pagina); fallback alla pagina di default dell'utente.
-    const pageId = job.fbPageId || user?.fbPageId;
-    if (!pageId || !user?.fbAccessToken) {
+    // Credenziali: prima dall'AGENTE proprietario del job, poi fallback al profilo utente (legacy).
+    let credPageId: string | null | undefined;
+    let credToken: string | null | undefined;
+    let companyName: string | null | undefined;
+    if (job.agentId) {
+      const agent = await prisma.agentInstance.findUnique({
+        where: { id: job.agentId },
+        select: { fbPageId: true, fbAccessToken: true, name: true },
+      });
+      credPageId = agent?.fbPageId;
+      credToken = agent?.fbAccessToken;
+      companyName = agent?.name;
+    }
+    if (!credToken) {
+      const user = await prisma.user.findUnique({
+        where: { id: job.userId },
+        select: { fbPageId: true, fbAccessToken: true, companyName: true },
+      });
+      credPageId = credPageId || user?.fbPageId;
+      credToken = credToken || user?.fbAccessToken;
+      companyName = companyName || user?.companyName;
+    }
+    // La pagina target e quella del job (multi-pagina); fallback alla pagina di default.
+    const pageId = job.fbPageId || credPageId;
+    if (!pageId || !credToken) {
       throw new Error("Pagina o token Facebook non configurati.");
     }
-    const token = decryptSecret(user.fbAccessToken);
+    const token = decryptSecret(credToken);
 
     const env: Record<string, string> = {
       FB_PAGE_ID: pageId,
@@ -43,7 +61,7 @@ async function runJob(prisma: PrismaClient, job: any): Promise<void> {
       AI_CAPTION: job.aiCaption ? "true" : "false",
       AI_MODEL: job.aiModel || "",
       OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY || "",
-      COMPANY_NAME: user.companyName || "",
+      COMPANY_NAME: companyName || "",
       BIZ_NAME: job.bizName || "",
       BIZ_ADDRESS: job.bizAddress || "",
       BIZ_WHATSAPP: job.bizWhatsapp || "",

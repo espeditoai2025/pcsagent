@@ -13,6 +13,7 @@ model User {
   id             String          @id @default(uuid())
   email          String          @unique
   password       String?
+  role           String          @default("CLIENT") // ADMIN | CLIENT
   firstName      String?
   lastName       String?
   phone          String?
@@ -51,6 +52,8 @@ model ScheduledJob {
   id             String             @id @default(uuid())
   userId         String
   user           User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  agentId        String?            // agente proprietario del job (multi-tenant)
+  agent          AgentInstance?     @relation(fields: [agentId], references: [id], onDelete: Cascade)
   name           String
   platform       String             @default("FACEBOOK")
   status         String             @default("ACTIVE")
@@ -98,16 +101,60 @@ model ScheduledJobRun {
 }
 
 model AgentInstance {
-  id           String        @id @default(uuid())
-  name         String
-  systemPrompt String?
-  userId       String
-  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  sessions     ChatSession[]
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
+  id            String         @id @default(uuid())
+  name          String
+  slug          String?        @unique // per il link cliente /a/<slug>
+  clientName    String?
+  clientEmail   String?
+  systemPrompt  String?
+  // Social per-agente (token cifrato AES-256-GCM)
+  fbPageId      String?
+  fbAccessToken String?
+  enabledTools  String? // CSV dei tool extra attivi; null = solo strumenti base
+  // Token / crediti
+  tokenBalance  Int            @default(1000000)
+  tokensUsed    Int            @default(0)
+  active        Boolean        @default(true)
+  userId        String // admin che gestisce l'agente
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sessions      ChatSession[]
+  scheduledJobs ScheduledJob[]
+  tokenUsages   TokenUsage[]
+  recharges     Recharge[]
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
 
   @@index([userId])
+}
+
+// Ledger consumi token per agente (pesati per modello)
+model TokenUsage {
+  id               String        @id @default(uuid())
+  agentId          String
+  agent            AgentInstance @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  model            String
+  promptTokens     Int           @default(0)
+  completionTokens Int           @default(0)
+  weightedCredits  Int           @default(0) // token "pesati" scalati dal saldo
+  source           String? // es. chat | social
+  createdAt        DateTime      @default(now())
+
+  @@index([agentId])
+  @@index([agentId, createdAt])
+}
+
+// Ricariche token (Stripe)
+model Recharge {
+  id              String        @id @default(uuid())
+  agentId         String
+  agent           AgentInstance @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  amountEur       Float
+  tokens          Int
+  stripeSessionId String?
+  status          String        @default("PENDING") // PENDING | PAID | FAILED
+  createdAt       DateTime      @default(now())
+
+  @@index([agentId])
 }
 
 model ChatSession {
