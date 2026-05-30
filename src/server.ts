@@ -12,6 +12,7 @@ const pdfParse = require("pdf-parse");
 import { processAndStoreDocument } from "./utils/embeddings";
 import { extractAndUpdateMemory } from "./services/memoryService";
 import { startScheduler } from "./services/scheduler";
+import { usageStore, chargeAgent } from "./services/tokenMeter";
 import dotenv from "dotenv";
 dotenv.config();
 
@@ -127,6 +128,21 @@ app.post("/api/chat", async (c) => {
   return streamSSE(c, async (stream) => {
     try {
       let finalMessageContent = message;
+
+      // 0. Risolvi l'agente proprietario della sessione e applica i limiti di credito
+      const chatSession = await prisma.chatSession.findUnique({
+        where: { id: sessionId },
+        include: { agent: true },
+      });
+      const agent = chatSession?.agent || null;
+      if (agent && !agent.active) {
+        await stream.writeSSE({ data: JSON.stringify({ type: "result", success: true, result: "Questo agente è attualmente sospeso. Contatta l'amministratore." }) });
+        return;
+      }
+      if (agent && agent.tokenBalance <= 0) {
+        await stream.writeSSE({ data: JSON.stringify({ type: "result", success: true, result: "⚠️ Il credito dell'agente è esaurito. Per continuare a usare la chat è necessaria una ricarica." }) });
+        return;
+      }
 
       // 1. Trascrizione Audio (STT) se l'allegato è una nota vocale
       if (attachment && attachment.type?.startsWith('audio/')) {
@@ -244,24 +260,32 @@ app.post("/api/chat", async (c) => {
       };
 
       let lastState: any = null;
+      const usageAcc = { entries: [] as { model: string; prompt: number; completion: number }[] };
 
-      // Usa agentGraph.stream per ottenere gli aggiornamenti dei nodi in tempo reale
-      for await (const chunk of await agentGraph.stream(initialState)) {
-        const nodeName = Object.keys(chunk)[0];
-        lastState = (chunk as Record<string, any>)[nodeName];
-        
-        let statusMessage = "Elaborazione grafo LangChain...";
-        if (nodeName === "supervisor") statusMessage = "[Nodo: Supervisor] Analisi richiesta e routing...";
-        if (nodeName === "coder") statusMessage = "[Nodo: Coder] Generazione script Python...";
-        if (nodeName === "executor") statusMessage = "[Nodo: Executor] Esecuzione script in container Docker...";
-        if (nodeName === "searcher") statusMessage = "[Nodo: Searcher] Interrogazione web API...";
-        if (nodeName === "image_gen") statusMessage = "[Nodo: ImageGen] Chiamata API generazione immagine...";
-        if (nodeName === "pdf_maker") statusMessage = "[Nodo: PDFMaker] Compilazione HTML e rendering Puppeteer...";
-        if (nodeName === "retriever") statusMessage = "[Nodo: Retriever] Vettorializzazione ed estrazione dati...";
+      // Esegui il grafo dentro il contatore token (cattura i consumi LLM di questo run)
+      await usageStore.run(usageAcc, async () => {
+        for await (const chunk of await agentGraph.stream(initialState)) {
+          const nodeName = Object.keys(chunk)[0];
+          lastState = (chunk as Record<string, any>)[nodeName];
 
-        await stream.writeSSE({
-          data: JSON.stringify({ type: "status", message: statusMessage }),
-        });
+          let statusMessage = "Elaborazione grafo LangChain...";
+          if (nodeName === "supervisor") statusMessage = "[Nodo: Supervisor] Analisi richiesta e routing...";
+          if (nodeName === "coder") statusMessage = "[Nodo: Coder] Generazione script Python...";
+          if (nodeName === "executor") statusMessage = "[Nodo: Executor] Esecuzione script in container Docker...";
+          if (nodeName === "searcher") statusMessage = "[Nodo: Searcher] Interrogazione web API...";
+          if (nodeName === "image_gen") statusMessage = "[Nodo: ImageGen] Chiamata API generazione immagine...";
+          if (nodeName === "pdf_maker") statusMessage = "[Nodo: PDFMaker] Compilazione HTML e rendering Puppeteer...";
+          if (nodeName === "retriever") statusMessage = "[Nodo: Retriever] Vettorializzazione ed estrazione dati...";
+
+          await stream.writeSSE({
+            data: JSON.stringify({ type: "status", message: statusMessage }),
+          });
+        }
+      });
+
+      // Addebita all'agente i token consumati in questo run (pesati per modello)
+      if (agent) {
+        await chargeAgent(prisma, agent.id, usageAcc.entries, "chat").catch((e) => console.error("charge error", e));
       }
 
       if (lastState) {
