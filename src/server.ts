@@ -13,6 +13,7 @@ import { processAndStoreDocument } from "./utils/embeddings";
 import { extractAndUpdateMemory } from "./services/memoryService";
 import { startScheduler } from "./services/scheduler";
 import { usageStore, chargeUser } from "./services/tokenMeter";
+import { modelForLevel } from "./services/aiLevels";
 import dotenv from "dotenv";
 dotenv.config();
 
@@ -256,10 +257,14 @@ app.post("/api/chat", async (c) => {
         return new (require("@langchain/core/messages").AIMessage)(msg.content);
       });
 
+      // Risolvi il modello dal grado di intelligenza scelto dall'utente
+      const chatModel = await modelForLevel(prisma, (userProfile as any)?.aiLevel);
+
       const initialState = {
         messages: agentMessages,
         userData: userProfile,
         agentPrompt: agent?.systemPrompt || null,
+        chatModel,
       };
 
       let lastState: any = null;

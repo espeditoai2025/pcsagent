@@ -17,6 +17,7 @@ model User {
   active         Boolean         @default(true) // l'admin può sospendere un utente
   tokenBalance   Int             @default(100000) // bonus di prova
   tokensUsed     Int             @default(0)
+  aiLevel        Int             @default(1) // grado intelligenza chat: 1 base, 2 avanzato, 3 massimo
   firstName      String?
   lastName       String?
   phone          String?
@@ -297,6 +298,13 @@ model RigaDocumento {
   createdAt               DateTime  @default(now())
 
   @@index([documentoId])
+}
+
+// Impostazioni piattaforma (es. mappa livelli->modelli AI), editabili dall'admin.
+model Setting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
 }
 
 model AuditLog {

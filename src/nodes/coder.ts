@@ -1,5 +1,5 @@
 import { AgentState } from "../state";
-import { coderModel } from "../services/llm";
+import { coderModel, makeChatModel } from "../services/llm";
 import { SystemMessage, HumanMessage } from "@langchain/core/messages";
 
 export const coderNode = async (state: AgentState): Promise<Partial<AgentState>> => {
@@ -191,7 +191,8 @@ ${lastMsg}`;
     messages.push(new HumanMessage(`Codice precedente che ha FALLITO:\n${state.pythonCode}`));
   }
 
-  const response = await coderModel.invoke(messages);
+  const model = state.chatModel ? makeChatModel(state.chatModel, 0.1) : coderModel;
+  const response = await model.invoke(messages);
 
   let code = response.content as string;
   // Rimuovi eventuali blocchi markdown se il modello non ha rispettato le regole

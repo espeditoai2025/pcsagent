@@ -1,5 +1,5 @@
 import { AgentState } from "../state";
-import { routerModel } from "../services/llm";
+import { routerModel, makeChatModel } from "../services/llm";
 import { formatMemoryForPrompt } from "../services/memoryService";
 import { SystemMessage } from "@langchain/core/messages";
 import { z } from "zod";
@@ -105,7 +105,9 @@ Rispondi SOLO in JSON valido:
     ...state.messages,
   ];
 
-  const response = await routerModel.withStructuredOutput(routerSchema).invoke(messages);
+  // Usa il modello del grado di intelligenza scelto dall'utente (fallback al router base)
+  const model = state.chatModel ? makeChatModel(state.chatModel, 0) : routerModel;
+  const response = await model.withStructuredOutput(routerSchema).invoke(messages);
 
   return {
     messages: [new SystemMessage(`Supervisor Decision: ROUTE TO ${response.next}\nInstructions: ${response.instructions}`)],

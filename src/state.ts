@@ -38,6 +38,11 @@ export const AgentStateAnnotation = Annotation.Root({
     reducer: (left, right) => right ?? left,
     default: () => null,
   }),
+  // Modello AI da usare per la chat (risolto dal grado di intelligenza dell'utente)
+  chatModel: Annotation<string | null>({
+    reducer: (left, right) => right ?? left,
+    default: () => null,
+  }),
 });
 
 export type AgentState = typeof AgentStateAnnotation.State;

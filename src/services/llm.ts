@@ -42,3 +42,13 @@ export const routerModel = new ChatOpenAI({
   temperature: 0.0,
   callbacks: [new TokenMeterHandler(ROUTER_MODEL)],
 });
+
+/** Crea al volo un modello (con metering corretto) per il modello scelto dal grado di intelligenza. */
+export function makeChatModel(model: string, temperature = 0.3): ChatOpenAI {
+  return new ChatOpenAI({
+    ...openRouterConfig,
+    modelName: model,
+    temperature,
+    callbacks: [new TokenMeterHandler(model)],
+  });
+}
