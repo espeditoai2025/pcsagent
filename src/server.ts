@@ -257,6 +257,7 @@ app.post("/api/chat", async (c) => {
       const initialState = {
         messages: agentMessages,
         userData: userProfile,
+        agentPrompt: agent?.systemPrompt || null,
       };
 
       let lastState: any = null;

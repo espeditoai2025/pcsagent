@@ -33,6 +33,11 @@ export const AgentStateAnnotation = Annotation.Root({
     reducer: (left, right) => right ?? left,
     default: () => null,
   }),
+  // Prompt/personalità specifica dell'agente (configurata dall'admin)
+  agentPrompt: Annotation<string | null>({
+    reducer: (left, right) => right ?? left,
+    default: () => null,
+  }),
 });
 
 export type AgentState = typeof AgentStateAnnotation.State;

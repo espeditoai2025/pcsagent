@@ -28,8 +28,13 @@ Telefono: ${userData.phone || ""}
 Email: ${userData.email || ""}
 Sito Web: ${userData.website || ""}` : "";
 
+  // Personalità/istruzioni specifiche dell'agente (configurate dall'admin per il cliente)
+  const agentPromptBlock = state.agentPrompt
+    ? `\n=== ISTRUZIONI DELL'AGENTE (priorità alta) ===\n${state.agentPrompt}\n`
+    : "";
+
   const systemPrompt = `Sei il Supervisor di un Agente AI autonomo. Analizza la richiesta dell'utente e scegli lo strumento corretto.
-${memoryBlock}
+${agentPromptBlock}${memoryBlock}
 ${companyBlock}
 
 === STRUMENTI DISPONIBILI ===
