@@ -29,12 +29,25 @@ if not page_id or not token:
     print("ERRORE: credenziali Facebook mancanti (FB_PAGE_ID / FB_ACCESS_TOKEN).")
     sys.exit(1)
 
+# Risolvi il PAGE access token: per pubblicare COME pagina serve il token della
+# pagina, non un token utente. Se 'token' e' un user-token che gestisce la pagina,
+# /{page_id}?fields=access_token restituisce il page-token. Funziona anche se 'token'
+# e' gia un page-token. In caso di errore si prosegue col token fornito.
+post_token = token
+try:
+    _r = requests.get(f"{GRAPH}/{page_id}", params={"fields": "access_token", "access_token": token}, timeout=30)
+    _j = _r.json()
+    if _r.status_code == 200 and _j.get("access_token"):
+        post_token = _j["access_token"]
+except Exception:
+    pass
+
 # --- Modalita TEXT: post di testo immediato (test), senza fonte dati ---
 if source_type == "TEXT":
     caption = caption_template.strip() or "Post di test da PCS Agent: la connessione alla pagina Facebook funziona correttamente."
     try:
         resp = requests.post(f"{GRAPH}/{page_id}/feed",
-                             data={"message": caption, "access_token": token}, timeout=60)
+                             data={"message": caption, "access_token": post_token}, timeout=60)
         body = resp.json() if resp.headers.get("content-type", "").startswith("application/json") else {"raw": resp.text}
         if resp.status_code == 200 and (body.get("id") or body.get("post_id")):
             print(f"POST_OK {body.get('post_id') or body.get('id')} | {caption[:80]}")
@@ -118,11 +131,11 @@ image_url = get("image", "img", "immagine", "foto", "photo", "image_url", "image
 try:
     if image_url and image_url.lower().startswith("http"):
         resp = requests.post(f"{GRAPH}/{page_id}/photos",
-                             data={"url": image_url, "caption": caption, "access_token": token},
+                             data={"url": image_url, "caption": caption, "access_token": post_token},
                              timeout=60)
     else:
         resp = requests.post(f"{GRAPH}/{page_id}/feed",
-                             data={"message": caption, "access_token": token},
+                             data={"message": caption, "access_token": post_token},
                              timeout=60)
     body = resp.json() if resp.headers.get("content-type", "").startswith("application/json") else {"raw": resp.text}
     if resp.status_code == 200 and (body.get("id") or body.get("post_id")):
