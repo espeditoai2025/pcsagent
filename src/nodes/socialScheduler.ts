@@ -170,9 +170,17 @@ Il token è GIÀ configurato e l'utente può amministrare PIÙ pagine.
   }
 
   try {
+    // Collega (o crea) l'Agente Social della pagina, cosi la pubblicazione
+    // compare anche nel pannello come card della pagina.
+    const sa = await prisma.socialAgent.upsert({
+      where: { userId_fbPageId: { userId, fbPageId: target.id } },
+      update: {},
+      create: { userId, fbPageId: target.id, fbPageName: target.name, name: target.name },
+    });
     const job = await prisma.scheduledJob.create({
       data: {
         userId,
+        socialAgentId: sa.id,
         name: parsed.name || `Pubblicazione ${target.name}`,
         platform: "FACEBOOK",
         status: "ACTIVE",

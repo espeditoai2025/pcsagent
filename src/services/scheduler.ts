@@ -44,8 +44,16 @@ async function runJob(prisma: PrismaClient, job: any): Promise<void> {
       credToken = credToken || user?.fbAccessToken;
       companyName = companyName || user?.companyName;
     }
-    // La pagina target e quella del job (multi-pagina); fallback alla pagina di default.
-    const pageId = job.fbPageId || credPageId;
+    // Agente social (pagina FB): fornisce pagina e branding di default per il job.
+    let sa: { fbPageId: string; bizName: string | null; bizAddress: string | null; bizWhatsapp: string | null; bizWebsite: string | null } | null = null;
+    if (job.socialAgentId) {
+      sa = await prisma.socialAgent.findUnique({
+        where: { id: job.socialAgentId },
+        select: { fbPageId: true, bizName: true, bizAddress: true, bizWhatsapp: true, bizWebsite: true },
+      });
+    }
+    // La pagina target: prima il job, poi l'agente social, infine la pagina di default.
+    const pageId = job.fbPageId || sa?.fbPageId || credPageId;
     if (!pageId || !credToken) {
       throw new Error("Pagina o token Facebook non configurati.");
     }
@@ -64,10 +72,11 @@ async function runJob(prisma: PrismaClient, job: any): Promise<void> {
       AI_MODEL: await modelForLevel(prisma, job.aiLevel),
       OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY || "",
       COMPANY_NAME: companyName || "",
-      BIZ_NAME: job.bizName || "",
-      BIZ_ADDRESS: job.bizAddress || "",
-      BIZ_WHATSAPP: job.bizWhatsapp || "",
-      BIZ_WEBSITE: job.bizWebsite || "",
+      // Branding: prima il job, poi l'agente social della pagina, infine il profilo.
+      BIZ_NAME: job.bizName || sa?.bizName || companyName || "",
+      BIZ_ADDRESS: job.bizAddress || sa?.bizAddress || "",
+      BIZ_WHATSAPP: job.bizWhatsapp || sa?.bizWhatsapp || "",
+      BIZ_WEBSITE: job.bizWebsite || sa?.bizWebsite || "",
     };
 
     const result = await executePythonScript(FACEBOOK_POST_SCRIPT, { env, workspace: job.userId });

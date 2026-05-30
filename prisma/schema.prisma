@@ -45,6 +45,7 @@ model User {
   documenti      Documento[]
   auditLogs      AuditLog[]
   scheduledJobs  ScheduledJob[]
+  socialAgents   SocialAgent[]
 }
 
 // ===== SCHEDULER SOCIAL =====
@@ -58,6 +59,8 @@ model ScheduledJob {
   user           User               @relation(fields: [userId], references: [id], onDelete: Cascade)
   agentId        String?            // agente proprietario del job (multi-tenant)
   agent          AgentInstance?     @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  socialAgentId  String?            // agente social (pagina FB) a cui appartiene il job
+  socialAgent    SocialAgent?       @relation(fields: [socialAgentId], references: [id], onDelete: Cascade)
   name           String
   platform       String             @default("FACEBOOK")
   status         String             @default("ACTIVE")
@@ -89,6 +92,34 @@ model ScheduledJob {
 
   @@index([userId])
   @@index([status, nextRunAt])
+  @@index([socialAgentId])
+}
+
+// ===== AGENTE SOCIAL PER PAGINA =====
+// Un "agente social" rappresenta UNA pagina Facebook gestita dall'utente.
+// Il token resta uno solo (sul profilo User): da quel token si ricavano tutte
+// le pagine amministrate; ogni pagina che l'utente vuole gestire diventa un
+// SocialAgent con il suo branding di default, ereditato dalle sue pubblicazioni.
+model SocialAgent {
+  id            String         @id @default(uuid())
+  userId        String
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  fbPageId      String         // pagina FB gestita da questo agente
+  fbPageName    String
+  name          String         // nome visualizzato (default = nome pagina)
+  // Branding di default per i post di questa pagina (override del profilo)
+  bizName       String?
+  bizAddress    String?
+  bizWhatsapp   String?
+  bizWebsite    String?
+  aiLevel       Int            @default(1) // grado di default per le nuove pubblicazioni
+  active        Boolean        @default(true)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  scheduledJobs ScheduledJob[]
+
+  @@unique([userId, fbPageId])
+  @@index([userId])
 }
 
 model ScheduledJobRun {
