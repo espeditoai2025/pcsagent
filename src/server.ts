@@ -12,7 +12,7 @@ const pdfParse = require("pdf-parse");
 import { processAndStoreDocument } from "./utils/embeddings";
 import { extractAndUpdateMemory } from "./services/memoryService";
 import { startScheduler } from "./services/scheduler";
-import { usageStore, chargeAgent } from "./services/tokenMeter";
+import { usageStore, chargeUser } from "./services/tokenMeter";
 import dotenv from "dotenv";
 dotenv.config();
 
@@ -135,12 +135,14 @@ app.post("/api/chat", async (c) => {
         include: { agent: true },
       });
       const agent = chatSession?.agent || null;
-      if (agent && !agent.active) {
-        await stream.writeSSE({ data: JSON.stringify({ type: "result", success: true, result: "Questo agente è attualmente sospeso. Contatta l'amministratore." }) });
+      // Limiti per UTENTE (modello SaaS): account sospeso o credito esaurito
+      const billingUser = await prisma.user.findUnique({ where: { id: userId }, select: { active: true, tokenBalance: true } });
+      if (billingUser && !billingUser.active) {
+        await stream.writeSSE({ data: JSON.stringify({ type: "result", success: true, result: "Il tuo account è stato sospeso. Contatta l'assistenza." }) });
         return;
       }
-      if (agent && agent.tokenBalance <= 0) {
-        await stream.writeSSE({ data: JSON.stringify({ type: "result", success: true, result: "⚠️ Il credito dell'agente è esaurito. Per continuare a usare la chat è necessaria una ricarica." }) });
+      if (billingUser && billingUser.tokenBalance <= 0) {
+        await stream.writeSSE({ data: JSON.stringify({ type: "result", success: true, result: "⚠️ Hai esaurito i token. Ricarica per continuare a usare la chat." }) });
         return;
       }
 
@@ -284,10 +286,8 @@ app.post("/api/chat", async (c) => {
         }
       });
 
-      // Addebita all'agente i token consumati in questo run (pesati per modello)
-      if (agent) {
-        await chargeAgent(prisma, agent.id, usageAcc.entries, "chat").catch((e) => console.error("charge error", e));
-      }
+      // Addebita all'UTENTE i token consumati in questo run (pesati per modello)
+      await chargeUser(prisma, userId, usageAcc.entries, "chat").catch((e) => console.error("charge error", e));
 
       if (lastState) {
         const messages: any[] = lastState.messages ?? [];

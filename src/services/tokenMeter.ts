@@ -79,6 +79,42 @@ export function totalCredits(entries: UsageEntry[]): number {
   return entries.reduce((sum, e) => sum + Math.ceil((e.prompt + e.completion) * weightFor(e.model)), 0);
 }
 
+/** Scrive il ledger TokenUsage e scala i crediti dal saldo dell'UTENTE (modello SaaS). */
+export async function chargeUser(
+  prisma: PrismaClient,
+  userId: string | null | undefined,
+  entries: UsageEntry[],
+  source: string
+): Promise<number> {
+  if (!userId || entries.length === 0) return 0;
+
+  const byModel: Record<string, { prompt: number; completion: number; credits: number }> = {};
+  let total = 0;
+  for (const e of entries) {
+    const credits = Math.ceil((e.prompt + e.completion) * weightFor(e.model));
+    total += credits;
+    const m = (byModel[e.model] ||= { prompt: 0, completion: 0, credits: 0 });
+    m.prompt += e.prompt;
+    m.completion += e.completion;
+    m.credits += credits;
+  }
+
+  try {
+    for (const [model, v] of Object.entries(byModel)) {
+      await prisma.tokenUsage.create({
+        data: { userId, model, promptTokens: v.prompt, completionTokens: v.completion, weightedCredits: v.credits, source },
+      });
+    }
+    await prisma.user.update({
+      where: { id: userId },
+      data: { tokenBalance: { decrement: total }, tokensUsed: { increment: total } },
+    });
+  } catch (e) {
+    console.error("[TokenMeter] Errore addebito utente:", e);
+  }
+  return total;
+}
+
 /** Scrive il ledger TokenUsage e scala i crediti dal saldo dell'agente. */
 export async function chargeAgent(
   prisma: PrismaClient,
