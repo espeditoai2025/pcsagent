@@ -5,7 +5,7 @@ import { SystemMessage } from "@langchain/core/messages";
 import { z } from "zod";
 
 const routerSchema = z.object({
-  next: z.enum(["coder", "searcher", "image_gen", "retriever", "pdf_maker", "gestionale", "finish"]),
+  next: z.enum(["coder", "searcher", "image_gen", "retriever", "pdf_maker", "gestionale", "social_scheduler", "finish"]),
   instructions: z.string().describe("Istruzioni dettagliate e specifiche per il nodo successivo"),
 });
 
@@ -71,6 +71,14 @@ ${companyBlock}
    IMPORTANTE: dopo 'gestionale', l'agente può passare a 'pdf_maker' per generare il documento
    o a 'coder' per inviare email.
 
+📅 'social_scheduler' — Programmazione pubblicazioni automatiche sui social (Facebook).
+   USA per:
+   - "pubblica ogni giorno alle 9 un prodotto dal mio Google Sheet / file Excel"
+   - "programma post automatici", "imposta un cron per pubblicare sui social"
+   - Qualsiasi richiesta di pubblicazione RICORRENTE/PIANIFICATA su Facebook
+   NON usare 'coder' per questo: lo scheduler gestisce credenziali cifrate, cron e pubblicazione collaudata.
+   Le 'instructions' devono riportare integralmente la richiesta dell'utente (frequenza, fonte dati, formato del post).
+
 💬 'finish' — Risposta diretta senza tool.
    USA SOLO per: saluti, domande generali di conversazione, domande a cui puoi rispondere direttamente.
    IMPORTANTE: quando usi 'finish', il campo 'instructions' contiene ESATTAMENTE il testo che verrà mostrato all'utente.
@@ -108,6 +116,7 @@ export const routerEdge = (state: AgentState): string => {
   if (content.includes("ROUTE TO retriever")) return "retriever";
   if (content.includes("ROUTE TO pdf_maker")) return "pdf_maker";
   if (content.includes("ROUTE TO gestionale")) return "gestionale";
+  if (content.includes("ROUTE TO social_scheduler")) return "social_scheduler";
 
   return "finish";
 };

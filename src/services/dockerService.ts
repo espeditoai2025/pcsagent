@@ -16,9 +16,17 @@ export interface ExecutePythonResult {
  * che ha già pre-installate tutte le librerie comuni (pandas, numpy, reportlab, ecc.).
  * Il container ha accesso alla rete ed espone un volume condiviso in /app/data.
  */
-export async function executePythonScript(code: string): Promise<ExecutePythonResult> {
+export interface ExecuteOptions {
+  /** Variabili d'ambiente extra iniettate nel container (es. token, config). */
+  env?: Record<string, string>;
+}
+
+export async function executePythonScript(code: string, opts: ExecuteOptions = {}): Promise<ExecutePythonResult> {
   const containerName = `agent-exec-${crypto.randomBytes(4).toString("hex")}`;
   const sharedDataDir = path.resolve(process.cwd(), "shared_data");
+
+  // Inoltra le variabili d'ambiente nel formato richiesto da Docker (["K=V", ...])
+  const envList = Object.entries(opts.env || {}).map(([k, v]) => `${k}=${v ?? ""}`);
 
   // Assicurati che la cartella condivisa esista
   await fs.mkdir(sharedDataDir, { recursive: true }).catch(() => {});
@@ -40,6 +48,7 @@ export async function executePythonScript(code: string): Promise<ExecutePythonRe
       name: containerName,
       Cmd: ["python", `/app/data/${scriptFileName}`],
       WorkingDir: "/app/data",
+      Env: envList,
       Tty: true,
       HostConfig: {
         // AutoRemove: false — lo rimuoviamo manualmente DOPO aver letto i log

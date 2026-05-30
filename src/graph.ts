@@ -8,6 +8,7 @@ import { imageGenNode } from "./nodes/imageGen";
 import { retrieverNode } from "./nodes/retriever";
 import { pdfMakerNode } from "./nodes/pdfMaker";
 import { gestionaleNode } from "./nodes/gestionale";
+import { socialSchedulerNode } from "./nodes/socialScheduler";
 
 // Costruzione del grafo
 const builder = new StateGraph(AgentStateAnnotation)
@@ -18,7 +19,8 @@ const builder = new StateGraph(AgentStateAnnotation)
   .addNode("image_gen", imageGenNode)
   .addNode("retriever", retrieverNode)
   .addNode("pdf_maker", pdfMakerNode)
-  .addNode("gestionale", gestionaleNode);
+  .addNode("gestionale", gestionaleNode)
+  .addNode("social_scheduler", socialSchedulerNode);
 
 // Definizione del flusso
 builder.addEdge(START, "supervisor");
@@ -31,6 +33,7 @@ builder.addConditionalEdges("supervisor", routerEdge, {
   retriever: "retriever",
   pdf_maker: "pdf_maker",
   gestionale: "gestionale",
+  social_scheduler: "social_scheduler",
   finish: END,
 });
 
@@ -48,6 +51,7 @@ builder.addEdge("searcher", END);
 builder.addEdge("image_gen", END);
 builder.addEdge("retriever", END);
 builder.addEdge("pdf_maker", END);
+builder.addEdge("social_scheduler", END);
 // Gestionale torna al supervisor per decidere il passo successivo (es. pdf_maker o coder per email)
 builder.addEdge("gestionale", "supervisor");
 

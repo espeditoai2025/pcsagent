@@ -11,6 +11,7 @@ import { PrismaClient } from "@prisma/client";
 const pdfParse = require("pdf-parse");
 import { processAndStoreDocument } from "./utils/embeddings";
 import { extractAndUpdateMemory } from "./services/memoryService";
+import { startScheduler } from "./services/scheduler";
 import dotenv from "dotenv";
 dotenv.config();
 
@@ -349,3 +350,6 @@ serve({
   fetch: app.fetch,
   port
 });
+
+// Avvia lo scheduler delle pubblicazioni social (tick ogni 60s)
+startScheduler(prisma);
