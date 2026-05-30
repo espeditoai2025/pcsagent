@@ -26,6 +26,37 @@ const INFRA_USER_MESSAGE =
   "non è disponibile sul server. Ho preparato la soluzione ma non posso lanciarla finché " +
   "l'ambiente non viene ripristinato. Riprova tra poco o contatta l'amministratore.";
 
+// Righe di "rumore tecnico" (es. avvisi pip) che NON devono finire nella risposta all'utente.
+const OUTPUT_NOISE_PATTERNS: RegExp[] = [
+  /WARNING: Running pip as the 'root' user/i,
+  /It is recommended to use a virtual environment/i,
+  /A new release of pip is available/i,
+  /To update, run:.*pip install --upgrade pip/i,
+  /pip\.pypa\.io\/warnings\/venv/i,
+  /^\s*\[notice\]/i,
+  /^\s*\[?DEPRECATION\]?/i,
+];
+
+/**
+ * Rimuove i codici colore ANSI, i caratteri di controllo residui e le righe di
+ * rumore tooling (es. avvisi pip) dall'output mostrato all'utente.
+ * I regex con caratteri di controllo sono costruiti via String.fromCharCode per
+ * non inserire byte invisibili nel sorgente.
+ */
+export function cleanExecutionOutput(out: string): string {
+  if (!out) return out;
+  const ESC = String.fromCharCode(27);
+  const ansiRe = new RegExp(ESC + "\\[[0-9;]*m", "g"); // sequenze ANSI: ESC [ ... m
+  const ctrlRe = new RegExp("[" + ESC + "\\x00-\\x08\\x0b\\x0c\\x0e-\\x1f]", "g"); // control char (tranne \t \n \r)
+  return out
+    .replace(ansiRe, "")
+    .replace(ctrlRe, "")
+    .split("\n")
+    .filter((line) => !OUTPUT_NOISE_PATTERNS.some((rx) => rx.test(line)))
+    .join("\n")
+    .trim();
+}
+
 export const executorNode = async (state: AgentState): Promise<Partial<AgentState>> => {
   if (!state.pythonCode) {
     return { executionError: "No Python code provided." };
@@ -35,10 +66,11 @@ export const executorNode = async (state: AgentState): Promise<Partial<AgentStat
   const result = await executePythonScript(state.pythonCode);
 
   if (result.success) {
+    const output = cleanExecutionOutput(result.output);
     return {
       executionError: null,
-      finalResult: result.output,
-      messages: [new SystemMessage(`Esecuzione completata con successo.\nOutput:\n${result.output}`)],
+      finalResult: output,
+      messages: [new SystemMessage(`Esecuzione completata con successo.\nOutput:\n${output}`)],
     };
   }
 
