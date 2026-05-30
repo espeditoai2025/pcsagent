@@ -19,8 +19,8 @@ const jobSchema = z.object({
   targetPageName: z.string().describe("Nome della pagina Facebook su cui pubblicare, se indicato dall'utente; altrimenti stringa vuota"),
   name: z.string().describe("Nome breve del job (solo per SCHEDULE)"),
   cronExpression: z.string().describe("Cron a 5 campi (solo SCHEDULE). Es: ogni giorno alle 9 = '0 9 * * *'"),
-  sourceType: z.enum(["GOOGLE_SHEET", "EXCEL", "TEXT"]).describe("TEXT = post di solo testo (tipico per un test rapido)"),
-  sourceRef: z.string().describe("URL Google Sheet o nome file .xlsx; vuoto se sourceType=TEXT"),
+  sourceType: z.enum(["GOOGLE_SHEET", "EXCEL", "CSV", "TEXT"]).describe("TEXT = post di solo testo (tipico per un test rapido); CSV/EXCEL = file caricato; GOOGLE_SHEET = link"),
+  sourceRef: z.string().describe("URL Google Sheet o nome file .csv/.xlsx; vuoto se sourceType=TEXT"),
   captionTemplate: z.string().describe("Per SCHEDULE: template con {colonna}. Per TEST_NOW/TEXT: il testo del post. Vuoto = default"),
   selectionMode: z.enum(["SEQUENTIAL", "RANDOM"]),
 });
@@ -124,6 +124,7 @@ Il token è GIÀ configurato e l'utente può amministrare PIÙ pagine.
   // 5) TEST IMMEDIATO
   if (parsed.intent === "TEST_NOW") {
     try {
+      const useAi = parsed.sourceType !== "TEXT";
       const env: Record<string, string> = {
         FB_PAGE_ID: target.id,
         FB_ACCESS_TOKEN: decryptSecret(userData.fbAccessToken),
@@ -131,6 +132,9 @@ Il token è GIÀ configurato e l'utente può amministrare PIÙ pagine.
         SOURCE_REF: parsed.sourceRef || "",
         ROW_INDEX: "0",
         CAPTION_TEMPLATE: parsed.captionTemplate || "",
+        AI_CAPTION: useAi ? "true" : "false",
+        OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY || "",
+        COMPANY_NAME: userData.companyName || "",
       };
       const result = await executePythonScript(FACEBOOK_POST_SCRIPT, { env });
       const out = (result.output || "").trim();
@@ -165,6 +169,7 @@ Il token è GIÀ configurato e l'utente può amministrare PIÙ pagine.
         sourceType: parsed.sourceType,
         sourceRef: parsed.sourceRef,
         captionTemplate: parsed.captionTemplate || null,
+        aiCaption: parsed.sourceType !== "TEXT",
         selectionMode: parsed.selectionMode || "SEQUENTIAL",
         nextRunAt,
       },

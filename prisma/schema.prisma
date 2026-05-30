@@ -61,6 +61,7 @@ model ScheduledJob {
   sourceType     String             @default("GOOGLE_SHEET")
   sourceRef      String // URL Google Sheet oppure filename Excel in shared_data
   captionTemplate String?           // es. "{nome} a soli {prezzo}€! {descrizione}"
+  aiCaption      Boolean            @default(true) // caption generata dall'AI (post "che vende")
   selectionMode  String             @default("SEQUENTIAL")
   cursor         Int                @default(0)
   lastRunAt      DateTime?

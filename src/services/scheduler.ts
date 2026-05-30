@@ -22,7 +22,7 @@ async function runJob(prisma: PrismaClient, job: any): Promise<void> {
   try {
     const user = await prisma.user.findUnique({
       where: { id: job.userId },
-      select: { fbPageId: true, fbAccessToken: true },
+      select: { fbPageId: true, fbAccessToken: true, companyName: true },
     });
     // La pagina target e quella del job (multi-pagina); fallback alla pagina di default dell'utente.
     const pageId = job.fbPageId || user?.fbPageId;
@@ -38,6 +38,9 @@ async function runJob(prisma: PrismaClient, job: any): Promise<void> {
       SOURCE_REF: job.sourceRef,
       ROW_INDEX: String(job.cursor || 0),
       CAPTION_TEMPLATE: job.captionTemplate || "",
+      AI_CAPTION: job.aiCaption ? "true" : "false",
+      OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY || "",
+      COMPANY_NAME: user.companyName || "",
     };
 
     const result = await executePythonScript(FACEBOOK_POST_SCRIPT, { env });
