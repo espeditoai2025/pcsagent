@@ -3,6 +3,7 @@ import { routerModel } from "../services/llm";
 import { computeNextRun } from "../services/scheduler";
 import { executePythonScript } from "../services/dockerService";
 import { FACEBOOK_POST_SCRIPT } from "../services/socialTemplates";
+import { listFacebookPages, FacebookPage } from "../services/facebook";
 import { decryptSecret } from "../utils/crypto";
 import { PrismaClient } from "@prisma/client";
 import { SystemMessage } from "@langchain/core/messages";
@@ -14,71 +15,86 @@ const jobSchema = z.object({
   intent: z
     .enum(["TEST_NOW", "SCHEDULE", "NEED_INFO"])
     .describe("TEST_NOW = pubblica subito un post di prova; SCHEDULE = programma pubblicazioni ricorrenti; NEED_INFO = mancano dati"),
-  missingInfo: z.string().describe("Se intent=NEED_INFO, messaggio IN PRIMA PERSONA che chiede all'utente cosa manca"),
+  missingInfo: z.string().describe("Se intent=NEED_INFO, messaggio IN PRIMA PERSONA che chiede cosa manca"),
+  targetPageName: z.string().describe("Nome della pagina Facebook su cui pubblicare, se indicato dall'utente; altrimenti stringa vuota"),
   name: z.string().describe("Nome breve del job (solo per SCHEDULE)"),
-  cronExpression: z.string().describe("Cron a 5 campi (solo per SCHEDULE). Es: ogni giorno alle 9 = '0 9 * * *'"),
+  cronExpression: z.string().describe("Cron a 5 campi (solo SCHEDULE). Es: ogni giorno alle 9 = '0 9 * * *'"),
   sourceType: z.enum(["GOOGLE_SHEET", "EXCEL", "TEXT"]).describe("TEXT = post di solo testo (tipico per un test rapido)"),
-  sourceRef: z.string().describe("URL Google Sheet o nome file .xlsx; stringa vuota se sourceType=TEXT"),
-  captionTemplate: z.string().describe("Per SCHEDULE: template con segnaposto {colonna}. Per TEST_NOW con TEXT: il testo del post. Vuoto = testo di default"),
+  sourceRef: z.string().describe("URL Google Sheet o nome file .xlsx; vuoto se sourceType=TEXT"),
+  captionTemplate: z.string().describe("Per SCHEDULE: template con {colonna}. Per TEST_NOW/TEXT: il testo del post. Vuoto = default"),
   selectionMode: z.enum(["SEQUENTIAL", "RANDOM"]),
 });
+
+const pageList = (pages: FacebookPage[]) => pages.map((p) => `• ${p.name}`).join("\n");
 
 export const socialSchedulerNode = async (state: AgentState): Promise<Partial<AgentState>> => {
   console.log("---SOCIAL SCHEDULER NODE---");
   const userData = state.userData || {};
   const userId = userData.id;
+  if (!userId) return { finalResult: "Errore: utente non identificato." };
 
-  if (!userId) {
-    return { finalResult: "Errore: utente non identificato, impossibile gestire le pubblicazioni." };
-  }
-
-  // 1) Verifica credenziali Facebook nel profilo — messaggi SPECIFICI
-  const hasPage = !!(userData.fbPageId && String(userData.fbPageId).trim());
-  const hasToken = !!(userData.fbAccessToken && String(userData.fbAccessToken).trim());
-  if (!hasPage || !hasToken) {
-    let cosa: string;
-    if (!hasPage && !hasToken) cosa = "il **Page ID** e l'**Access Token**";
-    else if (!hasPage) cosa = "il **Page ID** (il token risulta già salvato ✓)";
-    else cosa = "l'**Access Token** (il Page ID risulta già salvato ✓)";
+  // 1) Serve il token utente (da cui ricaviamo le pagine gestite)
+  if (!userData.fbAccessToken || !String(userData.fbAccessToken).trim()) {
     return {
       finalResult:
-        `Mi manca ${cosa} della tua pagina Facebook. Aprilo dal **Profilo → Agente Social**, ` +
-        `inserisci il valore mancante e premi *Salva credenziali*. Poi torna qui e potremo procedere subito con un test.`,
+        "Mi manca l'**Access Token** di Facebook. Aprilo dal **Profilo → Agente Social**, incolla il token " +
+        "(la stringa lunga che inizia con `EAA…`) e premi *Salva credenziali*. Da quel token leggerò tutte le pagine che gestisci.",
     };
   }
 
   // 2) Interpreta la richiesta
   const sys = `Sei l'assistente che gestisce le pubblicazioni Facebook di un'azienda.
-Le credenziali (Page ID + Token) sono GIÀ configurate: NON chiederle.
+Il token è GIÀ configurato e l'utente può amministrare PIÙ pagine.
 
-Classifica la richiesta dell'utente:
-- intent=TEST_NOW: l'utente vuole pubblicare SUBITO (es. "fai un test", "pubblica ora un post", "prova a pubblicare").
-  - Se non indica una fonte dati (Google Sheet/Excel), usa sourceType=TEXT. In captionTemplate metti il testo del
-    post se l'utente lo ha specificato, altrimenti lascia vuoto (verrà usato un testo di prova di default).
-  - Se indica un Google Sheet/Excel, usa quella fonte e pubblicherò la prima riga come test.
-- intent=SCHEDULE: l'utente vuole pubblicazioni RICORRENTI. Servono frequenza + fonte dati.
-  - cronExpression: converti il linguaggio naturale (es. "ogni giorno alle 9" -> "0 9 * * *").
-  - sourceType GOOGLE_SHEET (con URL) o EXCEL (con nome file). captionTemplate con segnaposto {colonna} se descritto.
-- intent=NEED_INFO: SOLO se per SCHEDULE manca la fonte dati o la frequenza. In missingInfo chiedi in modo specifico
-  cosa manca. Per un TEST_NOW non servono info extra: un test di solo testo è sempre possibile.`;
+- targetPageName: se l'utente nomina una pagina (es. "sulla pagina Pcs Store"), riportala; altrimenti vuoto.
+- intent=TEST_NOW: vuole pubblicare SUBITO (es. "fai un test", "pubblica ora"). Se non indica una fonte dati usa
+  sourceType=TEXT (captionTemplate = testo del post se specificato, altrimenti vuoto).
+- intent=SCHEDULE: pubblicazioni RICORRENTI. Servono frequenza (cronExpression da linguaggio naturale) e fonte
+  dati (GOOGLE_SHEET con URL o EXCEL con nome file). captionTemplate con segnaposto {colonna} se descritto.
+- intent=NEED_INFO: SOLO se per SCHEDULE manca la fonte dati o la frequenza.`;
 
   let parsed: z.infer<typeof jobSchema>;
   try {
-    parsed = await routerModel.withStructuredOutput(jobSchema).invoke([
-      new SystemMessage(sys),
-      ...state.messages,
-    ]);
+    parsed = await routerModel.withStructuredOutput(jobSchema).invoke([new SystemMessage(sys), ...state.messages]);
   } catch (e: any) {
     return { finalResult: `Non sono riuscito a interpretare la richiesta: ${e.message}` };
   }
 
-  // 3) TEST IMMEDIATO
+  if (parsed.intent === "NEED_INFO") {
+    return { finalResult: parsed.missingInfo || "Mi servono ancora alcune informazioni." };
+  }
+
+  // 3) Elenca le pagine gestite dal token
+  let pages: FacebookPage[];
+  try {
+    pages = await listFacebookPages(decryptSecret(userData.fbAccessToken));
+  } catch (e: any) {
+    return { finalResult: `Non riesco a leggere le tue pagine Facebook: ${e.message}. Verifica che il token sia valido e abbia i permessi (pages_show_list, pages_manage_posts).` };
+  }
+  if (pages.length === 0) {
+    return { finalResult: "Il token non risulta amministratore di nessuna pagina Facebook. Genera un token con i permessi `pages_show_list` e `pages_manage_posts`." };
+  }
+
+  // 4) Risolvi la pagina target
+  let target: FacebookPage | null = null;
+  if (parsed.targetPageName && parsed.targetPageName.trim()) {
+    const q = parsed.targetPageName.trim().toLowerCase();
+    target = pages.find((p) => p.name.toLowerCase().includes(q)) || pages.find((p) => q.includes(p.name.toLowerCase())) || null;
+    if (!target) {
+      return { finalResult: `Non ho trovato la pagina "${parsed.targetPageName}" tra quelle che gestisci. Le tue pagine sono:\n${pageList(pages)}\n\nSu quale vuoi pubblicare?` };
+    }
+  } else if (pages.length === 1) {
+    target = pages[0];
+  } else {
+    return { finalResult: `Gestisci più pagine Facebook:\n${pageList(pages)}\n\nSu quale vuoi pubblicare? Indicami il nome.` };
+  }
+
+  // 5) TEST IMMEDIATO
   if (parsed.intent === "TEST_NOW") {
     try {
-      const token = decryptSecret(userData.fbAccessToken);
       const env: Record<string, string> = {
-        FB_PAGE_ID: String(userData.fbPageId),
-        FB_ACCESS_TOKEN: token,
+        FB_PAGE_ID: target.id,
+        FB_ACCESS_TOKEN: decryptSecret(userData.fbAccessToken),
         SOURCE_TYPE: parsed.sourceType || "TEXT",
         SOURCE_REF: parsed.sourceRef || "",
         ROW_INDEX: "0",
@@ -87,48 +103,33 @@ Classifica la richiesta dell'utente:
       const result = await executePythonScript(FACEBOOK_POST_SCRIPT, { env });
       const out = (result.output || "").trim();
       if (result.success && out.includes("POST_OK")) {
-        return {
-          finalResult:
-            `✅ Post di test pubblicato sulla tua pagina Facebook!\n\n` +
-            `Controlla la pagina per vederlo. Se è tutto ok, dimmi pure come vuoi programmare le pubblicazioni ` +
-            `automatiche (es. "ogni giorno alle 9 un prodotto dal mio Google Sheet").`,
-        };
+        return { finalResult: `✅ Post di test pubblicato sulla pagina **${target.name}**!\n\nControllala per vederlo. Se è ok, dimmi come programmare le pubblicazioni automatiche (es. "ogni giorno alle 9 un prodotto dal mio Google Sheet su ${target.name}").` };
       }
-      // Estrai un messaggio d'errore leggibile
       const errLine = out.split("\n").find((l) => l.startsWith("ERRORE")) || result.error || out || "errore sconosciuto";
-      return {
-        finalResult:
-          `❌ La pubblicazione di test non è andata a buon fine.\n\n${errLine}\n\n` +
-          `Verifica che il token sia un *Page Access Token* valido e con i permessi di pubblicazione, e che il Page ID sia corretto.`,
-      };
+      return { finalResult: `❌ Pubblicazione di test non riuscita sulla pagina **${target.name}**.\n\n${errLine}` };
     } catch (e: any) {
-      return { finalResult: `Errore durante il test di pubblicazione: ${e.message}` };
+      return { finalResult: `Errore durante il test: ${e.message}` };
     }
   }
 
-  // 4) NEED_INFO
-  if (parsed.intent === "NEED_INFO") {
-    return { finalResult: parsed.missingInfo || "Mi servono ancora alcune informazioni per programmare la pubblicazione." };
-  }
-
-  // 5) SCHEDULE — crea il job ricorrente
+  // 6) SCHEDULE
   const nextRunAt = computeNextRun(parsed.cronExpression, "Europe/Rome");
-  if (!nextRunAt) {
-    return { finalResult: `La frequenza indicata non è valida (cron: "${parsed.cronExpression}"). Riprova specificando meglio l'orario.` };
-  }
+  if (!nextRunAt) return { finalResult: `La frequenza non è valida (cron: "${parsed.cronExpression}"). Riprova specificando meglio l'orario.` };
   if (parsed.sourceType !== "TEXT" && !parsed.sourceRef) {
-    return { finalResult: "Per programmare le pubblicazioni mi serve la fonte dati: incolla il link del Google Sheet o il nome del file Excel caricato." };
+    return { finalResult: "Mi serve la fonte dati: incolla il link del Google Sheet o il nome del file Excel caricato." };
   }
 
   try {
     const job = await prisma.scheduledJob.create({
       data: {
         userId,
-        name: parsed.name || "Pubblicazione automatica",
+        name: parsed.name || `Pubblicazione ${target.name}`,
         platform: "FACEBOOK",
         status: "ACTIVE",
         cronExpression: parsed.cronExpression,
         timezone: "Europe/Rome",
+        fbPageId: target.id,
+        fbPageName: target.name,
         sourceType: parsed.sourceType,
         sourceRef: parsed.sourceRef,
         captionTemplate: parsed.captionTemplate || null,
@@ -136,15 +137,14 @@ Classifica la richiesta dell'utente:
         nextRunAt,
       },
     });
-
     const fonte = parsed.sourceType === "GOOGLE_SHEET" ? "Google Sheet" : parsed.sourceType === "EXCEL" ? `file Excel (${parsed.sourceRef})` : "testo";
     const quando = nextRunAt.toLocaleString("it-IT", { timeZone: "Europe/Rome" });
     return {
       finalResult:
         `✅ Pubblicazione automatica programmata!\n\n` +
-        `- **Job:** ${job.name}\n- **Piattaforma:** Facebook\n- **Fonte:** ${fonte}\n` +
+        `- **Pagina:** ${target.name}\n- **Job:** ${job.name}\n- **Fonte:** ${fonte}\n` +
         `- **Frequenza:** \`${parsed.cronExpression}\`\n- **Prossima esecuzione:** ${quando}\n\n` +
-        `Puoi gestire, mettere in pausa o testare i job dalla sezione *Agente Social* del Profilo.`,
+        `Gestisci o testa i job dalla sezione *Agente Social* del Profilo.`,
     };
   } catch (e: any) {
     console.error("Social scheduler error:", e);

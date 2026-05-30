@@ -24,13 +24,15 @@ async function runJob(prisma: PrismaClient, job: any): Promise<void> {
       where: { id: job.userId },
       select: { fbPageId: true, fbAccessToken: true },
     });
-    if (!user?.fbPageId || !user?.fbAccessToken) {
-      throw new Error("Credenziali Facebook non configurate nel profilo.");
+    // La pagina target e quella del job (multi-pagina); fallback alla pagina di default dell'utente.
+    const pageId = job.fbPageId || user?.fbPageId;
+    if (!pageId || !user?.fbAccessToken) {
+      throw new Error("Pagina o token Facebook non configurati.");
     }
     const token = decryptSecret(user.fbAccessToken);
 
     const env: Record<string, string> = {
-      FB_PAGE_ID: user.fbPageId,
+      FB_PAGE_ID: pageId,
       FB_ACCESS_TOKEN: token,
       SOURCE_TYPE: job.sourceType,
       SOURCE_REF: job.sourceRef,

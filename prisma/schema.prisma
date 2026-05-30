@@ -56,6 +56,8 @@ model ScheduledJob {
   status         String             @default("ACTIVE")
   cronExpression String
   timezone       String             @default("Europe/Rome")
+  fbPageId       String? // pagina target di QUESTO job (un utente puo gestire piu pagine)
+  fbPageName     String?
   sourceType     String             @default("GOOGLE_SHEET")
   sourceRef      String // URL Google Sheet oppure filename Excel in shared_data
   captionTemplate String?           // es. "{nome} a soli {prezzo}€! {descrizione}"
