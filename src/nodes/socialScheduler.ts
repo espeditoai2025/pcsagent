@@ -3,7 +3,7 @@ import { routerModel } from "../services/llm";
 import { computeNextRun } from "../services/scheduler";
 import { executePythonScript } from "../services/dockerService";
 import { FACEBOOK_POST_SCRIPT } from "../services/socialTemplates";
-import { listFacebookPages, FacebookPage } from "../services/facebook";
+import { listFacebookPages, getTokenPermissions, FacebookPage } from "../services/facebook";
 import { decryptSecret } from "../utils/crypto";
 import { PrismaClient } from "@prisma/client";
 import { SystemMessage } from "@langchain/core/messages";
@@ -13,8 +13,8 @@ const prisma = new PrismaClient();
 
 const jobSchema = z.object({
   intent: z
-    .enum(["TEST_NOW", "SCHEDULE", "NEED_INFO"])
-    .describe("TEST_NOW = pubblica subito un post di prova; SCHEDULE = programma pubblicazioni ricorrenti; NEED_INFO = mancano dati"),
+    .enum(["TEST_NOW", "SCHEDULE", "NEED_INFO", "LIST_INFO"])
+    .describe("TEST_NOW = pubblica subito; SCHEDULE = programma ricorrenti; LIST_INFO = elenca pagine/permessi del token; NEED_INFO = mancano dati"),
   missingInfo: z.string().describe("Se intent=NEED_INFO, messaggio IN PRIMA PERSONA che chiede cosa manca"),
   targetPageName: z.string().describe("Nome della pagina Facebook su cui pubblicare, se indicato dall'utente; altrimenti stringa vuota"),
   name: z.string().describe("Nome breve del job (solo per SCHEDULE)"),
@@ -47,6 +47,8 @@ export const socialSchedulerNode = async (state: AgentState): Promise<Partial<Ag
 Il token è GIÀ configurato e l'utente può amministrare PIÙ pagine.
 
 - targetPageName: se l'utente nomina una pagina (es. "sulla pagina Pcs Store"), riportala; altrimenti vuoto.
+- intent=LIST_INFO: l'utente vuole SAPERE quali pagine gestisce o quali permessi ha il token
+  (es. "quali pagine posso gestire?", "che permessi ho?", "mostrami le pagine collegate", "elenco pagine").
 - intent=TEST_NOW: vuole pubblicare SUBITO (es. "fai un test", "pubblica ora"). Se non indica una fonte dati usa
   sourceType=TEXT (captionTemplate = testo del post se specificato, altrimenti vuoto).
 - intent=SCHEDULE: pubblicazioni RICORRENTI. Servono frequenza (cronExpression da linguaggio naturale) e fonte
@@ -62,6 +64,36 @@ Il token è GIÀ configurato e l'utente può amministrare PIÙ pagine.
 
   if (parsed.intent === "NEED_INFO") {
     return { finalResult: parsed.missingInfo || "Mi servono ancora alcune informazioni." };
+  }
+
+  // 2.5) LIST_INFO: l'utente chiede quali pagine gestisce / quali permessi ha il token
+  if (parsed.intent === "LIST_INFO") {
+    const userToken = decryptSecret(userData.fbAccessToken);
+    let pagesInfo: FacebookPage[] = [];
+    let perms: string[] = [];
+    try {
+      pagesInfo = await listFacebookPages(userToken);
+    } catch (e: any) {
+      return { finalResult: `Non riesco a leggere le pagine: ${e.message}. Verifica che il token sia valido.` };
+    }
+    try {
+      perms = await getTokenPermissions(userToken);
+    } catch {
+      /* i permessi sono best-effort */
+    }
+    const pagesTxt = pagesInfo.length
+      ? pagesInfo.map((p) => `• ${p.name} (id ${p.id})`).join("\n")
+      : "Nessuna pagina amministrata da questo token.";
+    const canPost = perms.includes("pages_manage_posts");
+    const permTxt = perms.length ? perms.map((p) => `\`${p}\``).join(", ") : "(nessuno rilevato)";
+    return {
+      finalResult:
+        `📘 **Pagine che gestisci** (${pagesInfo.length}):\n${pagesTxt}\n\n` +
+        `🔑 **Permessi del token:** ${permTxt}\n\n` +
+        (canPost
+          ? "✅ Il token può pubblicare (`pages_manage_posts` presente)."
+          : "⚠️ Manca il permesso `pages_manage_posts`: con questo token non posso pubblicare. Rigenera il token aggiungendo quel permesso."),
+    };
   }
 
   // 3) Elenca le pagine gestite dal token
