@@ -41,6 +41,7 @@ async function runJob(prisma: PrismaClient, job: any): Promise<void> {
       SELECTION_MODE: job.selectionMode || "SEQUENTIAL",
       CAPTION_TEMPLATE: job.captionTemplate || "",
       AI_CAPTION: job.aiCaption ? "true" : "false",
+      AI_MODEL: job.aiModel || "",
       OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY || "",
       COMPANY_NAME: user.companyName || "",
       BIZ_NAME: job.bizName || "",

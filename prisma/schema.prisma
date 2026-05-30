@@ -62,6 +62,7 @@ model ScheduledJob {
   sourceRef      String // URL Google Sheet oppure filename Excel in shared_data
   captionTemplate String?           // es. "{nome} a soli {prezzo}€! {descrizione}"
   aiCaption      Boolean            @default(true) // caption generata dall'AI (post "che vende")
+  aiModel        String?            // modello OpenRouter per la caption (vuoto = default flash-lite)
   // Branding per-job (override del profilo): un utente puo gestire piu attivita/pagine
   bizName        String?
   bizAddress     String?

@@ -34,6 +34,7 @@ selection_mode = os.environ.get("SELECTION_MODE", "SEQUENTIAL").strip().upper()
 caption_template = os.environ.get("CAPTION_TEMPLATE", "").strip()
 ai_caption = os.environ.get("AI_CAPTION", "").strip().lower() == "true"
 openrouter_key = os.environ.get("OPENROUTER_API_KEY", "").strip()
+ai_model = os.environ.get("AI_MODEL", "").strip() or "google/gemini-3.1-flash-lite"
 ai_tone = os.environ.get("AI_TONE", "").strip() or "simpatico e commerciale, con emoji"
 
 biz_name = os.environ.get("BIZ_NAME", "").strip() or os.environ.get("COMPANY_NAME", "").strip() or "il nostro negozio"
@@ -158,7 +159,7 @@ def build_caption(row):
         try:
             air = requests.post("https://openrouter.ai/api/v1/chat/completions",
                 headers={"Authorization": f"Bearer {openrouter_key}", "Content-Type": "application/json"},
-                json={"model": "google/gemini-3.1-flash-lite", "temperature": 0.8,
+                json={"model": ai_model, "temperature": 0.8,
                       "messages": [{"role": "user", "content": prompt}]}, timeout=45)
             if air.status_code == 200:
                 caption = air.json()["choices"][0]["message"]["content"].strip().strip('"')
