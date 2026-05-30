@@ -37,10 +37,16 @@ async function runJob(prisma: PrismaClient, job: any): Promise<void> {
       SOURCE_TYPE: job.sourceType,
       SOURCE_REF: job.sourceRef,
       ROW_INDEX: String(job.cursor || 0),
+      POSTS_PER_RUN: String(job.postsPerRun || 1),
+      SELECTION_MODE: job.selectionMode || "SEQUENTIAL",
       CAPTION_TEMPLATE: job.captionTemplate || "",
       AI_CAPTION: job.aiCaption ? "true" : "false",
       OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY || "",
       COMPANY_NAME: user.companyName || "",
+      BIZ_NAME: job.bizName || "",
+      BIZ_ADDRESS: job.bizAddress || "",
+      BIZ_WHATSAPP: job.bizWhatsapp || "",
+      BIZ_WEBSITE: job.bizWebsite || "",
     };
 
     const result = await executePythonScript(FACEBOOK_POST_SCRIPT, { env });
@@ -58,7 +64,9 @@ async function runJob(prisma: PrismaClient, job: any): Promise<void> {
     });
 
     const nextCursor =
-      job.selectionMode === "RANDOM" ? Math.floor(Math.random() * 100000) : (job.cursor || 0) + 1;
+      job.selectionMode === "RANDOM"
+        ? Math.floor(Math.random() * 100000)
+        : (job.cursor || 0) + (job.postsPerRun || 1); // avanza di N prodotti
 
     await prisma.scheduledJob.update({
       where: { id: job.id },

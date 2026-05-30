@@ -62,6 +62,12 @@ model ScheduledJob {
   sourceRef      String // URL Google Sheet oppure filename Excel in shared_data
   captionTemplate String?           // es. "{nome} a soli {prezzo}€! {descrizione}"
   aiCaption      Boolean            @default(true) // caption generata dall'AI (post "che vende")
+  // Branding per-job (override del profilo): un utente puo gestire piu attivita/pagine
+  bizName        String?
+  bizAddress     String?
+  bizWhatsapp    String?
+  bizWebsite     String?
+  postsPerRun    Int                @default(1) // quanti prodotti pubblicare ad ogni esecuzione
   selectionMode  String             @default("SEQUENTIAL")
   cursor         Int                @default(0)
   lastRunAt      DateTime?

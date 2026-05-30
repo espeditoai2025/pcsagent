@@ -23,6 +23,7 @@ const jobSchema = z.object({
   sourceRef: z.string().describe("URL Google Sheet o nome file .csv/.xlsx; vuoto se sourceType=TEXT"),
   captionTemplate: z.string().describe("Per SCHEDULE: template con {colonna}. Per TEST_NOW/TEXT: il testo del post. Vuoto = default"),
   selectionMode: z.enum(["SEQUENTIAL", "RANDOM"]),
+  postsPerRun: z.number().describe("Quanti prodotti pubblicare ad ogni esecuzione (default 1, se l'utente dice es. '3 prodotti')"),
 });
 
 const pageList = (pages: FacebookPage[]) => pages.map((p) => `• ${p.name}`).join("\n");
@@ -125,16 +126,24 @@ Il token è GIÀ configurato e l'utente può amministrare PIÙ pagine.
   if (parsed.intent === "TEST_NOW") {
     try {
       const useAi = parsed.sourceType !== "TEXT";
+      const indirizzo = [userData.street, userData.city, userData.zipCode].filter(Boolean).join(", ");
       const env: Record<string, string> = {
         FB_PAGE_ID: target.id,
         FB_ACCESS_TOKEN: decryptSecret(userData.fbAccessToken),
         SOURCE_TYPE: parsed.sourceType || "TEXT",
         SOURCE_REF: parsed.sourceRef || "",
         ROW_INDEX: "0",
+        POSTS_PER_RUN: "1",
+        SELECTION_MODE: parsed.selectionMode || "SEQUENTIAL",
         CAPTION_TEMPLATE: parsed.captionTemplate || "",
         AI_CAPTION: useAi ? "true" : "false",
         OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY || "",
+        // Per il test da chat uso i dati del profilo come branding (il pannello permette override per-job)
         COMPANY_NAME: userData.companyName || "",
+        BIZ_NAME: userData.companyName || "",
+        BIZ_ADDRESS: indirizzo,
+        BIZ_WHATSAPP: userData.phone || "",
+        BIZ_WEBSITE: userData.website || "",
       };
       const result = await executePythonScript(FACEBOOK_POST_SCRIPT, { env });
       const out = (result.output || "").trim();
@@ -170,6 +179,7 @@ Il token è GIÀ configurato e l'utente può amministrare PIÙ pagine.
         sourceRef: parsed.sourceRef,
         captionTemplate: parsed.captionTemplate || null,
         aiCaption: parsed.sourceType !== "TEXT",
+        postsPerRun: parsed.postsPerRun && parsed.postsPerRun > 0 ? Math.min(parsed.postsPerRun, 10) : 1,
         selectionMode: parsed.selectionMode || "SEQUENTIAL",
         nextRunAt,
       },
