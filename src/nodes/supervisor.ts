@@ -71,13 +71,14 @@ ${companyBlock}
    IMPORTANTE: dopo 'gestionale', l'agente può passare a 'pdf_maker' per generare il documento
    o a 'coder' per inviare email.
 
-📅 'social_scheduler' — Programmazione pubblicazioni automatiche sui social (Facebook).
+📅 'social_scheduler' — Pubblicazioni su Facebook: sia TEST IMMEDIATI sia programmazioni ricorrenti.
    USA per:
-   - "pubblica ogni giorno alle 9 un prodotto dal mio Google Sheet / file Excel"
+   - "fai un post di test", "pubblica ora", "prova a pubblicare un post" → pubblicazione IMMEDIATA
+   - "pubblica ogni giorno alle 9 un prodotto dal mio Google Sheet / file Excel" → ricorrente
    - "programma post automatici", "imposta un cron per pubblicare sui social"
-   - Qualsiasi richiesta di pubblicazione RICORRENTE/PIANIFICATA su Facebook
-   NON usare 'coder' per questo: lo scheduler gestisce credenziali cifrate, cron e pubblicazione collaudata.
-   Le 'instructions' devono riportare integralmente la richiesta dell'utente (frequenza, fonte dati, formato del post).
+   - Qualsiasi richiesta di pubblicazione su Facebook, immediata o pianificata
+   NON usare 'coder' per questo: lo scheduler gestisce credenziali cifrate, test e cron.
+   Le 'instructions' devono riportare integralmente la richiesta dell'utente.
 
 💬 'finish' — Risposta diretta senza tool.
    USA SOLO per: saluti, domande generali di conversazione, domande a cui puoi rispondere direttamente.

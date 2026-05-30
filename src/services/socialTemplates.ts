@@ -6,10 +6,10 @@
  *
  * ENV attese:
  *   FB_PAGE_ID, FB_ACCESS_TOKEN
- *   SOURCE_TYPE   = GOOGLE_SHEET | EXCEL
- *   SOURCE_REF    = URL del foglio Google | filename .xlsx in /app/data
+ *   SOURCE_TYPE   = GOOGLE_SHEET | EXCEL | TEXT
+ *   SOURCE_REF    = URL del foglio Google | filename .xlsx in /app/data (non serve per TEXT)
  *   ROW_INDEX     = indice riga da pubblicare (verra applicato il modulo sul totale righe)
- *   CAPTION_TEMPLATE = template caption con segnaposto {colonna} (opzionale)
+ *   CAPTION_TEMPLATE = template caption con segnaposto {colonna}; in modalita TEXT e il testo del post
  */
 export const FACEBOOK_POST_SCRIPT = String.raw`
 import os, re, sys, json
@@ -28,6 +28,23 @@ caption_template = os.environ.get("CAPTION_TEMPLATE", "").strip()
 if not page_id or not token:
     print("ERRORE: credenziali Facebook mancanti (FB_PAGE_ID / FB_ACCESS_TOKEN).")
     sys.exit(1)
+
+# --- Modalita TEXT: post di testo immediato (test), senza fonte dati ---
+if source_type == "TEXT":
+    caption = caption_template.strip() or "Post di test da PCS Agent: la connessione alla pagina Facebook funziona correttamente."
+    try:
+        resp = requests.post(f"{GRAPH}/{page_id}/feed",
+                             data={"message": caption, "access_token": token}, timeout=60)
+        body = resp.json() if resp.headers.get("content-type", "").startswith("application/json") else {"raw": resp.text}
+        if resp.status_code == 200 and (body.get("id") or body.get("post_id")):
+            print(f"POST_OK {body.get('post_id') or body.get('id')} | {caption[:80]}")
+            sys.exit(0)
+        print(f"ERRORE pubblicazione Facebook (HTTP {resp.status_code}): {json.dumps(body)[:500]}")
+        sys.exit(1)
+    except Exception as e:
+        print(f"ERRORE chiamata Graph API: {e}")
+        sys.exit(1)
+
 if not source_ref:
     print("ERRORE: fonte dati non configurata (SOURCE_REF vuoto).")
     sys.exit(1)
