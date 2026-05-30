@@ -58,16 +58,27 @@ export async function processAndStoreDocument(documentId: string, text: string) 
   }
 }
 
-export async function searchSimilarChunks(query: string, limit = 3): Promise<any[]> {
+export async function searchSimilarChunks(query: string, limit = 3, userId?: string): Promise<any[]> {
   const queryEmbedding = await generateEmbedding(query);
-  
+
+  // SICUREZZA: filtra i chunk SOLO ai documenti dell'utente corrente.
+  // Catena di proprietà: DocumentChunk -> Document -> ChatMessage -> ChatSession.userId
+  // Senza questo filtro la ricerca semantica restituirebbe i documenti di TUTTI gli utenti (data leak cross-tenant).
+  if (!userId) {
+    throw new Error("searchSimilarChunks: userId è obbligatorio per l'isolamento dei dati.");
+  }
+
   // Utilizza l'operatore <=> per la distanza coseno di pgvector
   const results = await prisma.$queryRaw`
-    SELECT "documentId", content, 1 - (embedding <=> ${queryEmbedding}::vector) AS similarity
-    FROM "DocumentChunk"
-    ORDER BY embedding <=> ${queryEmbedding}::vector
+    SELECT dc."documentId", dc.content, 1 - (dc.embedding <=> ${queryEmbedding}::vector) AS similarity
+    FROM "DocumentChunk" dc
+    JOIN "Document" d ON d.id = dc."documentId"
+    JOIN "ChatMessage" m ON m.id = d."messageId"
+    JOIN "ChatSession" s ON s.id = m."sessionId"
+    WHERE s."userId" = ${userId}
+    ORDER BY dc.embedding <=> ${queryEmbedding}::vector
     LIMIT ${limit}
   `;
-  
+
   return results as any[];
 }

@@ -5,9 +5,19 @@ export const retrieverNode = async (state: any) => {
   const messages = state.messages;
   const lastMessage = messages[messages.length - 1];
   const query = lastMessage.content;
+  const userId = state.userData?.id;
+
+  if (!userId) {
+    const msg = "Non riesco ad accedere ai documenti: utente non identificato.";
+    return {
+      messages: [...messages, { role: "system", content: msg }],
+      finalResult: msg,
+    };
+  }
 
   try {
-    const results = await searchSimilarChunks(query, 3);
+    // Cerca SOLO nei documenti dell'utente corrente (isolamento multi-tenant)
+    const results = await searchSimilarChunks(query, 3, userId);
     
     let resultText = "";
     if (results && results.length > 0) {

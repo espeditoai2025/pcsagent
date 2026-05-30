@@ -72,7 +72,7 @@ STEP 1 — Genera HTML professionale con CSS inline:
 STEP 2 — Converti in PDF con Playwright (qualità browser piena, supporta Google Fonts e CSS3):
   from playwright.sync_api import sync_playwright
   with sync_playwright() as p:
-      browser = p.chromium.launch(executable_path='/ms-playwright/chromium-1223/chrome-linux64/chrome')
+      browser = p.chromium.launch()  # auto-detect del browser (NON usare executable_path hardcoded)
       page = browser.new_page()
       page.set_content(html, wait_until='networkidle')
       page.pdf(path='/app/data/NOME.pdf', format='A4', print_background=True,
