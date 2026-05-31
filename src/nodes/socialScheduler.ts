@@ -5,9 +5,11 @@ import { modelForLevel } from "../services/aiLevels";
 import { chargeUser } from "../services/tokenMeter";
 import { executePythonScript } from "../services/dockerService";
 import { FACEBOOK_POST_SCRIPT } from "../services/socialTemplates";
-import { listFacebookPages, getTokenPermissions, FacebookPage } from "../services/facebook";
+import { listFacebookPages, getTokenPermissions, getPageAccessToken, getRecentPagePosts, FacebookPage } from "../services/facebook";
 import { decryptSecret } from "../utils/crypto";
 import { PrismaClient } from "@prisma/client";
+import fs from "fs";
+import path from "path";
 import { SystemMessage } from "@langchain/core/messages";
 import { z } from "zod";
 
@@ -15,8 +17,9 @@ const prisma = new PrismaClient();
 
 const jobSchema = z.object({
   intent: z
-    .enum(["TEST_NOW", "SCHEDULE", "NEED_INFO", "LIST_INFO"])
-    .describe("TEST_NOW = pubblica subito; SCHEDULE = programma ricorrenti; LIST_INFO = elenca pagine/permessi del token; NEED_INFO = mancano dati"),
+    .enum(["TEST_NOW", "SCHEDULE", "NEED_INFO", "LIST_INFO", "EXPORT_POSTS"])
+    .describe("TEST_NOW = pubblica subito; SCHEDULE = programma ricorrenti; LIST_INFO = elenca pagine/permessi del token; EXPORT_POSTS = salva gli ultimi N post di una pagina in un CSV; NEED_INFO = mancano dati"),
+  count: z.number().describe("Per EXPORT_POSTS: quanti post salvare (es. 'ultimi 10 post' = 10; default 10)"),
   missingInfo: z.string().describe("Se intent=NEED_INFO, messaggio IN PRIMA PERSONA che chiede cosa manca"),
   targetPageName: z.string().describe("Nome della pagina Facebook su cui pubblicare, se indicato dall'utente; altrimenti stringa vuota"),
   name: z.string().describe("Nome breve del job (solo per SCHEDULE)"),
@@ -70,6 +73,8 @@ Il token è GIÀ configurato e l'utente può amministrare PIÙ pagine.
   sourceType=TEXT (captionTemplate = testo del post se specificato, altrimenti vuoto).
 - intent=SCHEDULE: pubblicazioni RICORRENTI. Servono frequenza (cronExpression da linguaggio naturale) e fonte
   dati (GOOGLE_SHEET con URL o EXCEL con nome file). captionTemplate con segnaposto {colonna} se descritto.
+- intent=EXPORT_POSTS: l'utente vuole SALVARE/ESPORTARE gli ultimi N post di una pagina in un file CSV
+  (es. "salvami gli ultimi 10 post della pagina X in un csv", "esporta i post di Pcs Bus"). Metti count = N (default 10).
 - intent=NEED_INFO: SOLO se per SCHEDULE manca la fonte dati o la frequenza.`;
 
   let parsed: z.infer<typeof jobSchema>;
@@ -161,6 +166,44 @@ Il token è GIÀ configurato e l'utente può amministrare PIÙ pagine.
     target = allPages[0];
   } else {
     return { finalResult: `Gestisci più pagine Facebook:\n${pageList(allPages)}\n\nSu quale vuoi pubblicare? Indicami il nome.` };
+  }
+
+  // 4.5) EXPORT_POSTS: salva gli ultimi N post della pagina in un CSV (con URL immagine)
+  if (parsed.intent === "EXPORT_POSTS") {
+    const n = Math.min(Math.max(Math.round(parsed.count || 10), 1), 50);
+    const pageToken = await getPageAccessToken(target.token, target.id);
+    if (!pageToken) return { finalResult: `Non riesco a ottenere il token della pagina **${target.name}** per leggerne i post.` };
+    let posts;
+    try {
+      posts = await getRecentPagePosts(pageToken, target.id, n);
+    } catch (e: any) {
+      return { finalResult: `Non riesco a leggere i post di **${target.name}**: ${e.message}` };
+    }
+    if (!posts.length) return { finalResult: `Non ho trovato post con testo o immagine sulla pagina **${target.name}**.` };
+
+    const esc = (s: string) => '"' + String(s || "").replace(/"/g, '""') + '"';
+    const header = "name,description,imageUrl,data,permalink";
+    const rows = posts.map((p) => {
+      const firstLine = (p.message.split("\n")[0] || "").slice(0, 80);
+      return [esc(firstLine), esc(p.message), esc(p.imageUrl), esc(p.createdTime), esc(p.permalink)].join(",");
+    });
+    const csv = [header, ...rows].join("\n");
+    const safe = target.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "").slice(0, 30) || "pagina";
+    const filename = `post_${safe}_${Date.now()}.csv`;
+    try {
+      const dir = path.join(process.cwd(), "shared_data", userId);
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(path.join(dir, filename), csv, "utf8");
+    } catch (e: any) {
+      return { finalResult: `Errore nel salvare il file: ${e.message}` };
+    }
+    return {
+      finalResult:
+        `✅ Ho salvato gli ultimi **${posts.length}** post di **${target.name}** nel file \`${filename}\` (incluso l'URL dell'immagine di ogni post).\n\n` +
+        `Per ripubblicarli **rielaborati ogni volta in modo diverso**, dimmi ad esempio:\n` +
+        `_"pubblica ogni giorno alle 9 sulla pagina ${target.name} i contenuti dal file ${filename}"_\n\n` +
+        `Terrò attiva la riscrittura AI, così ogni post viene riproposto con parole nuove (la foto resta quella originale).`,
+    };
   }
 
   // 5) TEST IMMEDIATO
