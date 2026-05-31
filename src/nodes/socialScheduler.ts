@@ -101,20 +101,43 @@ Il token è GIÀ configurato e l'utente può amministrare PIÙ pagine.
   }
   const multi = sources.length > 1;
 
-  // 2.5) LIST_INFO: quali pagine gestisce (da tutti i token) e se può pubblicare
+  // 2.5) LIST_INFO: in linguaggio naturale — quali pagine gestisco e cosa so fare
   if (parsed.intent === "LIST_INFO") {
     if (allPages.length === 0) {
-      return { finalResult: `Non riesco a leggere pagine da nessun token.${pageErrors.length ? " (" + pageErrors.join("; ") + ")" : ""} Verifica i token in *Profilo → Agente Social*.` };
+      return { finalResult: `Per ora non vedo nessuna pagina Facebook collegata. Aggiungi o controlla i token nel **Profilo → Agente Social**.` };
     }
-    const pagesTxt = allPages.map((p) => `• ${p.name}${multi ? ` — _${p.connName}_` : ""} (id ${p.id})`).join("\n");
+    const pagesTxt = allPages.map((p) => `• **${p.name}**${multi ? ` _(${p.connName})_` : ""}`).join("\n");
+
+    // Unione dei permessi di tutti i token, tradotti in azioni comprensibili.
+    const granted = new Set<string>();
     const noPost: string[] = [];
     for (const s of sources) {
-      try { const perms = await getTokenPermissions(s.token); if (!perms.includes("pages_manage_posts")) noPost.push(s.name); } catch { /* best-effort */ }
+      try {
+        const perms = await getTokenPermissions(s.token);
+        perms.forEach((x) => granted.add(x));
+        if (!perms.includes("pages_manage_posts")) noPost.push(s.name);
+      } catch { /* best-effort */ }
     }
-    const postLine = noPost.length === 0
-      ? "✅ Posso pubblicare su tutte (permesso `pages_manage_posts` presente)."
-      : `⚠️ Questi token NON possono pubblicare (manca \`pages_manage_posts\`): ${noPost.join(", ")}.`;
-    return { finalResult: `📘 **Pagine che gestisci** (${allPages.length}):\n${pagesTxt}\n\n${postLine}` };
+    const CAP: [string, string][] = [
+      ["pages_manage_posts", "📝 Pubblicare ed eliminare post"],
+      ["pages_manage_engagement", "💬 Rispondere e moderare i commenti"],
+      ["pages_read_user_content", "👀 Leggere post, commenti e recensioni"],
+      ["pages_messaging", "✉️ Leggere e rispondere ai messaggi su Messenger"],
+      ["pages_utility_messaging", "🔔 Inviare messaggi di servizio e notifiche"],
+      ["pages_read_engagement", "📊 Vedere le interazioni dei follower"],
+      ["read_insights", "📈 Consultare le statistiche della pagina"],
+      ["pages_manage_metadata", "⚙️ Gestire impostazioni e informazioni della pagina"],
+      ["pages_manage_ads", "📣 Gestire le inserzioni pubblicitarie"],
+      ["catalog_management", "🛍️ Gestire il catalogo prodotti"],
+    ];
+    const caps = CAP.filter(([k]) => granted.has(k)).map(([, v]) => v);
+    const capTxt = caps.length ? caps.join("\n") : "Al momento i permessi non bastano per agire sulle pagine.";
+    const closing =
+      noPost.length === 0
+        ? "\n\nIn pratica posso **pubblicare i tuoi contenuti in automatico** su queste pagine: dimmi cosa vuoi pubblicare e quando! 😊"
+        : `\n\n⚠️ Una cosa: su **${noPost.join(", ")}** non ho ancora il permesso di pubblicare. Per attivarlo va rigenerato quel token includendo la gestione dei post.`;
+    const intro = allPages.length === 1 ? "Ho accesso a **1** pagina Facebook:" : `Ho accesso a **${allPages.length}** pagine Facebook:`;
+    return { finalResult: `${intro}\n${pagesTxt}\n\n**Ecco cosa posso fare per te su queste pagine:**\n${capTxt}${closing}` };
   }
 
   if (allPages.length === 0) {
