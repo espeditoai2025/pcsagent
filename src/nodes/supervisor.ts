@@ -43,7 +43,7 @@ ${companyBlock}
    USA per:
    - Qualsiasi automazione, calcolo, elaborazione dati
    - Analisi di file (CSV, Excel, PDF) e generazione di report dati
-   - Scraping web, chiamate API, download file
+   - Scraping web (estrarre prezzi/dati da un sito, anche dinamico con Playwright), chiamate API, download file
    - PDF con grafici, calcoli complessi o elaborazione dati
    - Qualsiasi task che richiede logica Python
    USA 'coder' per documenti SOLO se l'utente chiede esplicitamente grafici, calcoli su dati o elaborazioni complesse.

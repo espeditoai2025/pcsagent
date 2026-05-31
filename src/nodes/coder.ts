@@ -145,6 +145,27 @@ STEP 2 — Scarica e codifica in base64 per embedding nell'HTML:
 
 STEP 3 — Integra nell'HTML del documento (nel corpo del preventivo, accanto alla voce prodotto)
 
+=== WEB SCRAPING (siti statici e dinamici) ===
+Per estrarre dati da una pagina/sito web specifico:
+- Siti statici/semplici → requests + BeautifulSoup (veloce).
+- Siti DINAMICI (prodotti/prezzi caricati via JavaScript, scroll infinito, SPA) → USA Playwright
+  (Chromium già installato), che esegue il JavaScript e vede la pagina come un browser reale:
+    from playwright.sync_api import sync_playwright
+    with sync_playwright() as p:
+        browser = p.chromium.launch(args=["--no-sandbox"])
+        page = browser.new_page(user_agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/120.0 Safari/537.36")
+        page.goto(URL, wait_until="networkidle", timeout=30000)
+        # opzionale: page.wait_for_selector(".prodotto", timeout=10000)
+        html = page.content()
+        # estrai con page.query_selector_all("...") oppure passa html a BeautifulSoup
+        browser.close()
+- Estrai i campi utili (nome, prezzo, descrizione, URL immagine, link) e, se sono più elementi,
+  SALVA un CSV in /app/data/ con intestazione coerente coi post social: name,description,price,imageUrl
+  (così il file è subito riutilizzabile, es. come fonte per le pubblicazioni).
+- Usa timeout ragionevoli, gestisci le eccezioni con try/except e NON bloccarti mai.
+- Se serve solo un'INFORMAZIONE aggiornata dal web (notizie, prezzo medio di mercato) e non una
+  pagina precisa, non scrivere uno scraper: a quello pensa già la ricerca web dell'agente.
+
 === GRAFICI E VISUALIZZAZIONI ===
 Per grafici in PDF: genera con matplotlib, salva come PNG in /app/data/, poi incorpora nell'HTML come base64:
   import base64
