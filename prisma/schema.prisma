@@ -18,6 +18,7 @@ model User {
   tokenBalance   Int             @default(100000) // bonus di prova
   tokensUsed     Int             @default(0)
   aiLevel        Int             @default(1) // grado intelligenza chat: 1 base, 2 avanzato, 3 massimo
+  acceptedTermsAt DateTime?      // consenso a Privacy e Termini (GDPR) al momento della registrazione
   firstName      String?
   lastName       String?
   phone          String?
