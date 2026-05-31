@@ -128,6 +128,29 @@ export async function chargeUser(
   return total;
 }
 
+/** Addebito FISSO all'utente (es. 10.000 token per ogni immagine generata). */
+export async function chargeFlat(
+  prisma: PrismaClient,
+  userId: string | null | undefined,
+  credits: number,
+  model: string,
+  source: string
+): Promise<number> {
+  if (!userId || !credits || credits <= 0) return 0;
+  try {
+    await prisma.tokenUsage.create({
+      data: { userId, model, promptTokens: 0, completionTokens: 0, weightedCredits: credits, source },
+    });
+    await prisma.user.update({
+      where: { id: userId },
+      data: { tokenBalance: { decrement: credits }, tokensUsed: { increment: credits } },
+    });
+  } catch (e) {
+    console.error("[TokenMeter] Errore addebito fisso:", e);
+  }
+  return credits;
+}
+
 /** Scrive il ledger TokenUsage e scala i crediti dal saldo dell'agente. */
 export async function chargeAgent(
   prisma: PrismaClient,
