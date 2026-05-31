@@ -5,12 +5,15 @@ import { decryptSecret } from "../utils/crypto";
 import { FACEBOOK_POST_SCRIPT } from "./socialTemplates";
 import { modelForLevel } from "./aiLevels";
 import { chargeUser } from "./tokenMeter";
+import { scanAgentComments } from "./commentResponder";
 
 const TICK_MS = 60_000;
 
 // Job attualmente in esecuzione: evita che un tick successivo (ogni 60s) ri-prenda
 // un job la cui esecuzione dura piu del tick e lo ripubblichi (doppione).
 const running = new Set<string>();
+// Agenti la cui scansione commenti e in corso (evita sovrapposizioni).
+const replyRunning = new Set<string>();
 
 /** Calcola il prossimo orario di esecuzione da una cron expression + timezone. */
 export function computeNextRun(cronExpression: string, timezone: string, from: Date = new Date()): Date | null {
@@ -96,6 +99,16 @@ async function runJob(prisma: PrismaClient, job: any): Promise<void> {
     const out = (result.output || "").slice(0, 2000);
     const ok = result.success && out.includes("POST_OK");
 
+    // Memorizza gli ID dei post pubblicati (servono all'auto-risposta ai commenti).
+    if (ok && job.socialAgentId) {
+      const ids = Array.from((result.output || "").matchAll(/\(id\s+([0-9_]+)\)/g)).map((m) => m[1]);
+      if (ids.length) {
+        await prisma.publishedPost
+          .createMany({ data: ids.map((fbPostId) => ({ socialAgentId: job.socialAgentId as string, fbPostId })), skipDuplicates: true })
+          .catch(() => {});
+      }
+    }
+
     await prisma.scheduledJobRun.update({
       where: { id: run.id },
       data: {
@@ -167,6 +180,29 @@ async function tick(prisma: PrismaClient): Promise<void> {
       await runJob(prisma, j);
     } finally {
       running.delete(j.id);
+    }
+  }
+
+  // 3) Auto-risposta ai commenti per gli agenti che l'hanno attivata.
+  await tickAutoReply(prisma).catch((e) => console.error("[AutoReply] tick errore:", e.message));
+}
+
+// Scansiona i commenti degli agenti con auto-risposta attiva, rispettando la frequenza scelta.
+async function tickAutoReply(prisma: PrismaClient): Promise<void> {
+  const now = Date.now();
+  const agents = await prisma.socialAgent.findMany({ where: { autoReply: true, active: true } });
+  for (const a of agents) {
+    const everyMs = (a.autoReplyEveryMin || 60) * 60_000;
+    const last = a.autoReplyLastScan ? new Date(a.autoReplyLastScan).getTime() : 0;
+    if (now - last < everyMs) continue;
+    if (replyRunning.has(a.id)) continue;
+    replyRunning.add(a.id);
+    try {
+      await scanAgentComments(prisma, a);
+    } catch (e: any) {
+      console.error(`[AutoReply] errore agente ${a.id}:`, e.message);
+    } finally {
+      replyRunning.delete(a.id);
     }
   }
 }

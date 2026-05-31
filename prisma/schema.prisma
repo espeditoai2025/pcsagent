@@ -118,13 +118,47 @@ model SocialAgent {
   bizWebsite    String?
   aiLevel       Int            @default(1) // grado di default per le nuove pubblicazioni
   active        Boolean        @default(true)
+  // Contesto attività: descrizione di cosa fa l'azienda / servizi offerti (per l'AI)
+  bizContext    String?
+  // Risposta automatica ai commenti
+  autoReply         Boolean   @default(false)
+  autoReplyEveryMin Int       @default(60)
+  catalogType       String?   // GOOGLE_SHEET | CSV | EXCEL (catalogo prodotti/servizi)
+  catalogRef        String?   // URL Google Sheet o filename in shared_data/<userId>
+  autoReplyLastScan DateTime?
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
   scheduledJobs ScheduledJob[]
+  publishedPosts   PublishedPost[]
+  answeredComments AnsweredComment[]
 
   @@unique([userId, fbPageId])
   @@index([userId])
   @@index([connectionId])
+}
+
+// Post pubblicati dall'agente (per sapere su quali post leggere i commenti).
+model PublishedPost {
+  id            String      @id @default(uuid())
+  socialAgentId String
+  socialAgent   SocialAgent @relation(fields: [socialAgentId], references: [id], onDelete: Cascade)
+  fbPostId      String
+  createdAt     DateTime    @default(now())
+
+  @@unique([socialAgentId, fbPostId])
+  @@index([socialAgentId])
+}
+
+// Commenti gia gestiti dall'auto-risposta (per non rispondere due volte).
+model AnsweredComment {
+  id            String      @id @default(uuid())
+  socialAgentId String
+  socialAgent   SocialAgent @relation(fields: [socialAgentId], references: [id], onDelete: Cascade)
+  commentId     String
+  createdAt     DateTime    @default(now())
+
+  @@unique([socialAgentId, commentId])
+  @@index([socialAgentId])
 }
 
 // Connessione social = un token Facebook dell'utente. Un utente puo avere piu
