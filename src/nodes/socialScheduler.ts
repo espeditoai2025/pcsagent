@@ -28,16 +28,30 @@ const jobSchema = z.object({
   postsPerRun: z.number().describe("Quanti prodotti pubblicare ad ogni esecuzione (default 1, se l'utente dice es. '3 prodotti')"),
 });
 
-const pageList = (pages: FacebookPage[]) => pages.map((p) => `• ${p.name}`).join("\n");
+const pageList = (pages: { name: string }[]) => pages.map((p) => `• ${p.name}`).join("\n");
+
+// Sorgente token: profilo (connectionId null) o una connessione aggiunta.
+type Src = { connectionId: string | null; name: string; token: string };
+// Pagina con il token/connessione da cui proviene.
+type PageX = FacebookPage & { connectionId: string | null; connName: string; token: string };
 
 export const socialSchedulerNode = async (state: AgentState): Promise<Partial<AgentState>> => {
   console.log("---SOCIAL SCHEDULER NODE---");
-  const userData = state.userData || {};
+  const userData: any = state.userData || {};
   const userId = userData.id;
   if (!userId) return { finalResult: "Errore: utente non identificato." };
 
-  // 1) Serve il token utente (da cui ricaviamo le pagine gestite)
-  if (!userData.fbAccessToken || !String(userData.fbAccessToken).trim()) {
+  // 1) Raccoglie TUTTE le sorgenti token: profilo + connessioni multiple.
+  const sources: Src[] = [];
+  if (userData.fbAccessToken && String(userData.fbAccessToken).trim()) {
+    try { sources.push({ connectionId: null, name: "Principale", token: decryptSecret(userData.fbAccessToken) }); } catch { /* token profilo non decifrabile */ }
+  }
+  try {
+    const conns = await prisma.socialConnection.findMany({ where: { userId }, select: { id: true, name: true, accessToken: true } });
+    for (const c of conns) { try { sources.push({ connectionId: c.id, name: c.name, token: decryptSecret(c.accessToken) }); } catch { /* skip */ } }
+  } catch { /* nessuna connessione */ }
+
+  if (sources.length === 0) {
     return {
       finalResult:
         "Mi manca l'**Access Token** di Facebook. Aprilo dal **Profilo → Agente Social**, incolla il token " +
@@ -69,59 +83,56 @@ Il token è GIÀ configurato e l'utente può amministrare PIÙ pagine.
     return { finalResult: parsed.missingInfo || "Mi servono ancora alcune informazioni." };
   }
 
-  // 2.5) LIST_INFO: l'utente chiede quali pagine gestisce / quali permessi ha il token
-  if (parsed.intent === "LIST_INFO") {
-    const userToken = decryptSecret(userData.fbAccessToken);
-    let pagesInfo: FacebookPage[] = [];
-    let perms: string[] = [];
+  // Elenca le pagine da TUTTE le sorgenti (profilo + connessioni), dedup per id.
+  const allPages: PageX[] = [];
+  const seen = new Set<string>();
+  const pageErrors: string[] = [];
+  for (const s of sources) {
     try {
-      pagesInfo = await listFacebookPages(userToken);
+      const ps = await listFacebookPages(s.token);
+      for (const p of ps) {
+        if (seen.has(p.id)) continue;
+        seen.add(p.id);
+        allPages.push({ ...p, connectionId: s.connectionId, connName: s.name, token: s.token });
+      }
     } catch (e: any) {
-      return { finalResult: `Non riesco a leggere le pagine: ${e.message}. Verifica che il token sia valido.` };
+      pageErrors.push(`${s.name}: ${e.message}`);
     }
-    try {
-      perms = await getTokenPermissions(userToken);
-    } catch {
-      /* i permessi sono best-effort */
+  }
+  const multi = sources.length > 1;
+
+  // 2.5) LIST_INFO: quali pagine gestisce (da tutti i token) e se può pubblicare
+  if (parsed.intent === "LIST_INFO") {
+    if (allPages.length === 0) {
+      return { finalResult: `Non riesco a leggere pagine da nessun token.${pageErrors.length ? " (" + pageErrors.join("; ") + ")" : ""} Verifica i token in *Profilo → Agente Social*.` };
     }
-    const pagesTxt = pagesInfo.length
-      ? pagesInfo.map((p) => `• ${p.name} (id ${p.id})`).join("\n")
-      : "Nessuna pagina amministrata da questo token.";
-    const canPost = perms.includes("pages_manage_posts");
-    const permTxt = perms.length ? perms.map((p) => `\`${p}\``).join(", ") : "(nessuno rilevato)";
-    return {
-      finalResult:
-        `📘 **Pagine che gestisci** (${pagesInfo.length}):\n${pagesTxt}\n\n` +
-        `🔑 **Permessi del token:** ${permTxt}\n\n` +
-        (canPost
-          ? "✅ Il token può pubblicare (`pages_manage_posts` presente)."
-          : "⚠️ Manca il permesso `pages_manage_posts`: con questo token non posso pubblicare. Rigenera il token aggiungendo quel permesso."),
-    };
+    const pagesTxt = allPages.map((p) => `• ${p.name}${multi ? ` — _${p.connName}_` : ""} (id ${p.id})`).join("\n");
+    const noPost: string[] = [];
+    for (const s of sources) {
+      try { const perms = await getTokenPermissions(s.token); if (!perms.includes("pages_manage_posts")) noPost.push(s.name); } catch { /* best-effort */ }
+    }
+    const postLine = noPost.length === 0
+      ? "✅ Posso pubblicare su tutte (permesso `pages_manage_posts` presente)."
+      : `⚠️ Questi token NON possono pubblicare (manca \`pages_manage_posts\`): ${noPost.join(", ")}.`;
+    return { finalResult: `📘 **Pagine che gestisci** (${allPages.length}):\n${pagesTxt}\n\n${postLine}` };
   }
 
-  // 3) Elenca le pagine gestite dal token
-  let pages: FacebookPage[];
-  try {
-    pages = await listFacebookPages(decryptSecret(userData.fbAccessToken));
-  } catch (e: any) {
-    return { finalResult: `Non riesco a leggere le tue pagine Facebook: ${e.message}. Verifica che il token sia valido e abbia i permessi (pages_show_list, pages_manage_posts).` };
-  }
-  if (pages.length === 0) {
-    return { finalResult: "Il token non risulta amministratore di nessuna pagina Facebook. Genera un token con i permessi `pages_show_list` e `pages_manage_posts`." };
+  if (allPages.length === 0) {
+    return { finalResult: `Non riesco a leggere le tue pagine Facebook.${pageErrors.length ? " (" + pageErrors.join("; ") + ")" : ""} Verifica i token in *Profilo → Agente Social*.` };
   }
 
-  // 4) Risolvi la pagina target
-  let target: FacebookPage | null = null;
+  // 4) Risolvi la pagina target (tra tutte le pagine di tutti i token)
+  let target: PageX | null = null;
   if (parsed.targetPageName && parsed.targetPageName.trim()) {
     const q = parsed.targetPageName.trim().toLowerCase();
-    target = pages.find((p) => p.name.toLowerCase().includes(q)) || pages.find((p) => q.includes(p.name.toLowerCase())) || null;
+    target = allPages.find((p) => p.name.toLowerCase().includes(q)) || allPages.find((p) => q.includes(p.name.toLowerCase())) || null;
     if (!target) {
-      return { finalResult: `Non ho trovato la pagina "${parsed.targetPageName}" tra quelle che gestisci. Le tue pagine sono:\n${pageList(pages)}\n\nSu quale vuoi pubblicare?` };
+      return { finalResult: `Non ho trovato la pagina "${parsed.targetPageName}" tra quelle che gestisci. Le tue pagine sono:\n${pageList(allPages)}\n\nSu quale vuoi pubblicare?` };
     }
-  } else if (pages.length === 1) {
-    target = pages[0];
+  } else if (allPages.length === 1) {
+    target = allPages[0];
   } else {
-    return { finalResult: `Gestisci più pagine Facebook:\n${pageList(pages)}\n\nSu quale vuoi pubblicare? Indicami il nome.` };
+    return { finalResult: `Gestisci più pagine Facebook:\n${pageList(allPages)}\n\nSu quale vuoi pubblicare? Indicami il nome.` };
   }
 
   // 5) TEST IMMEDIATO
@@ -131,7 +142,7 @@ Il token è GIÀ configurato e l'utente può amministrare PIÙ pagine.
       const indirizzo = [userData.street, userData.city, userData.zipCode].filter(Boolean).join(", ");
       const env: Record<string, string> = {
         FB_PAGE_ID: target.id,
-        FB_ACCESS_TOKEN: decryptSecret(userData.fbAccessToken),
+        FB_ACCESS_TOKEN: target.token,
         SOURCE_TYPE: parsed.sourceType || "TEXT",
         SOURCE_REF: parsed.sourceRef || "",
         ROW_INDEX: "0",
@@ -174,8 +185,8 @@ Il token è GIÀ configurato e l'utente può amministrare PIÙ pagine.
     // compare anche nel pannello come card della pagina.
     const sa = await prisma.socialAgent.upsert({
       where: { userId_fbPageId: { userId, fbPageId: target.id } },
-      update: {},
-      create: { userId, fbPageId: target.id, fbPageName: target.name, name: target.name },
+      update: { connectionId: target.connectionId },
+      create: { userId, connectionId: target.connectionId, fbPageId: target.id, fbPageName: target.name, name: target.name },
     });
     const job = await prisma.scheduledJob.create({
       data: {
