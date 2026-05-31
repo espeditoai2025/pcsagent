@@ -162,6 +162,8 @@ Per estrarre dati da una pagina/sito web specifico:
 - Estrai i campi utili (nome, prezzo, descrizione, URL immagine, link) e, se sono più elementi,
   SALVA un CSV in /app/data/ con intestazione coerente coi post social: name,description,price,imageUrl
   (così il file è subito riutilizzabile, es. come fonte per le pubblicazioni).
+- ANNUNCIA SEMPRE il CSV creato con la dicitura ESATTA → [File Generato: nome_file.csv]
+  così l'utente può SCARICARLO dalla chat, controllarlo/integrarlo e poi ricaricarlo nel pannello.
 - Usa timeout ragionevoli, gestisci le eccezioni con try/except e NON bloccarti mai.
 - Se serve solo un'INFORMAZIONE aggiornata dal web (notizie, prezzo medio di mercato) e non una
   pagina precisa, non scrivere uno scraper: a quello pensa già la ricerca web dell'agente.
