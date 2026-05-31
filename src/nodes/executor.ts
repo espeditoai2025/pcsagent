@@ -1,6 +1,12 @@
 import { AgentState } from "../state";
 import { executePythonScript } from "../services/dockerService";
+import { chargeFlat } from "../services/tokenMeter";
 import { SystemMessage } from "@langchain/core/messages";
+import { PrismaClient } from "@prisma/client";
+
+const prisma = new PrismaClient();
+const IMAGE_MODEL = "google/gemini-3.1-flash-image-preview";
+const IMAGE_CREDITS = 10_000; // costo fisso per ogni immagine GENERATA con AI
 
 // Pattern che identificano un problema di INFRASTRUTTURA (non del codice generato):
 // immagine Docker mancante, daemon Docker non raggiungibile, ecc.
@@ -35,6 +41,7 @@ const OUTPUT_NOISE_PATTERNS: RegExp[] = [
   /pip\.pypa\.io\/warnings\/venv/i,
   /^\s*\[notice\]/i,
   /^\s*\[?DEPRECATION\]?/i,
+  /^\s*IMG_AI_GENERATED\s*$/i, // marcatore di billing immagini AI: non mostrarlo
 ];
 
 /**
@@ -66,6 +73,11 @@ export const executorNode = async (state: AgentState): Promise<Partial<AgentStat
   const result = await executePythonScript(state.pythonCode, { workspace: state.userData?.id });
 
   if (result.success) {
+    // Billing immagini GENERATE con AI dentro lo script (es. fallback nei PDF): 10.000 token ciascuna.
+    const aiImages = (result.output.match(/^\s*IMG_AI_GENERATED\s*$/gim) || []).length;
+    if (aiImages > 0 && state.userData?.id) {
+      await chargeFlat(prisma, state.userData.id, IMAGE_CREDITS * aiImages, IMAGE_MODEL, "image").catch(() => {});
+    }
     const output = cleanExecutionOutput(result.output);
     return {
       executionError: null,

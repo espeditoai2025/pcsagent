@@ -142,6 +142,12 @@ STEP 2 — Scarica e codifica in base64 per embedding nell'HTML:
                       img_data = requests.get(img_url_gen, timeout=10).content
                       img_b64 = base64.b64encode(img_data).decode()
                       img_html = f'<img src="data:image/jpeg;base64,{{img_b64}}" style="max-width:200px; object-fit:contain">'
+                      print("IMG_AI_GENERATED")  # OBBLIGATORIO: 1 immagine GENERATA con AI (costo 10.000 token)
+
+REGOLA COSTO IMMAGINI (IMPORTANTE):
+- Stampa la riga esatta IMG_AI_GENERATED (una per immagine) SOLO quando GENERI un'immagine con l'AI
+  (modello google/gemini-3.1-flash-image-preview).
+- NON stamparla MAI per immagini prese dal web, da un URL, da un file/catalogo/CSV o già fornite: quelle sono gratis.
 
 STEP 3 — Integra nell'HTML del documento (nel corpo del preventivo, accanto alla voce prodotto)
 
