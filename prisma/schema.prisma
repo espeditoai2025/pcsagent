@@ -19,6 +19,8 @@ model User {
   tokensUsed     Int             @default(0)
   aiLevel        Int             @default(1) // grado intelligenza chat: 1 base, 2 avanzato, 3 massimo
   acceptedTermsAt DateTime?      // consenso a Privacy e Termini (GDPR) al momento della registrazione
+  emailVerifiedAt DateTime?      // email verificata (double opt-in); null = non verificata
+  verifyToken     String?        // token monouso per il link di verifica email
   firstName      String?
   lastName       String?
   phone          String?
