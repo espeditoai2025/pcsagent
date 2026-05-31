@@ -46,6 +46,7 @@ model User {
   auditLogs      AuditLog[]
   scheduledJobs  ScheduledJob[]
   socialAgents   SocialAgent[]
+  socialConnections SocialConnection[]
 }
 
 // ===== SCHEDULER SOCIAL =====
@@ -104,6 +105,9 @@ model SocialAgent {
   id            String         @id @default(uuid())
   userId        String
   user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // Connessione (token) da cui proviene la pagina; null = token di default sul profilo.
+  connectionId  String?
+  connection    SocialConnection? @relation(fields: [connectionId], references: [id], onDelete: SetNull)
   fbPageId      String         // pagina FB gestita da questo agente
   fbPageName    String
   name          String         // nome visualizzato (default = nome pagina)
@@ -119,6 +123,24 @@ model SocialAgent {
   scheduledJobs ScheduledJob[]
 
   @@unique([userId, fbPageId])
+  @@index([userId])
+  @@index([connectionId])
+}
+
+// Connessione social = un token Facebook dell'utente. Un utente puo avere piu
+// token (es. pagine su Business/proprietari diversi): ogni token espone le sue
+// pagine. Token cifrato AES-256-GCM. null su SocialAgent = token di default (profilo).
+model SocialConnection {
+  id          String        @id @default(uuid())
+  userId      String
+  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name        String        // etichetta scelta dall'utente (es. "Business Pollino")
+  provider    String        @default("FACEBOOK")
+  accessToken String        // token cifrato AES-256-GCM
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  agents      SocialAgent[]
+
   @@index([userId])
 }
 

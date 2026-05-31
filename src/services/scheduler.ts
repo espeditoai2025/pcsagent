@@ -48,20 +48,22 @@ async function runJob(prisma: PrismaClient, job: any): Promise<void> {
       credToken = credToken || user?.fbAccessToken;
       companyName = companyName || user?.companyName;
     }
-    // Agente social (pagina FB): fornisce pagina e branding di default per il job.
-    let sa: { fbPageId: string; bizName: string | null; bizAddress: string | null; bizWhatsapp: string | null; bizWebsite: string | null } | null = null;
+    // Agente social (pagina FB): fornisce pagina, branding e (se ha una connessione) il token da usare.
+    let sa: { fbPageId: string; bizName: string | null; bizAddress: string | null; bizWhatsapp: string | null; bizWebsite: string | null; connection: { accessToken: string } | null } | null = null;
     if (job.socialAgentId) {
       sa = await prisma.socialAgent.findUnique({
         where: { id: job.socialAgentId },
-        select: { fbPageId: true, bizName: true, bizAddress: true, bizWhatsapp: true, bizWebsite: true },
+        select: { fbPageId: true, bizName: true, bizAddress: true, bizWhatsapp: true, bizWebsite: true, connection: { select: { accessToken: true } } },
       });
     }
+    // Token: prima quello della connessione dell'agente (token multipli), poi il token di default del profilo.
+    const encToken = sa?.connection?.accessToken || credToken;
     // La pagina target: prima il job, poi l'agente social, infine la pagina di default.
     const pageId = job.fbPageId || sa?.fbPageId || credPageId;
-    if (!pageId || !credToken) {
+    if (!pageId || !encToken) {
       throw new Error("Pagina o token Facebook non configurati.");
     }
-    const token = decryptSecret(credToken);
+    const token = decryptSecret(encToken);
 
     const env: Record<string, string> = {
       FB_PAGE_ID: pageId,
