@@ -118,26 +118,31 @@ Il token è GIÀ configurato e l'utente può amministrare PIÙ pagine.
         if (!perms.includes("pages_manage_posts")) noPost.push(s.name);
       } catch { /* best-effort */ }
     }
-    const CAP: [string, string][] = [
-      ["pages_manage_posts", "📝 Pubblicare ed eliminare post"],
-      ["pages_manage_engagement", "💬 Rispondere e moderare i commenti"],
-      ["pages_read_user_content", "👀 Leggere post, commenti e recensioni"],
+    // Permessi disponibili sul token MA non ancora funzioni attive dell'agente
+    // (oggi l'agente sa solo PUBBLICARE; il resto è "attivabile su richiesta").
+    const POSSIBLE: [string, string][] = [
+      ["pages_manage_engagement", "💬 Rispondere e moderare i commenti sotto i post"],
       ["pages_messaging", "✉️ Leggere e rispondere ai messaggi su Messenger"],
+      ["pages_read_user_content", "👀 Leggere commenti e recensioni"],
       ["pages_utility_messaging", "🔔 Inviare messaggi di servizio e notifiche"],
-      ["pages_read_engagement", "📊 Vedere le interazioni dei follower"],
       ["read_insights", "📈 Consultare le statistiche della pagina"],
       ["pages_manage_metadata", "⚙️ Gestire impostazioni e informazioni della pagina"],
       ["pages_manage_ads", "📣 Gestire le inserzioni pubblicitarie"],
       ["catalog_management", "🛍️ Gestire il catalogo prodotti"],
     ];
-    const caps = CAP.filter(([k]) => granted.has(k)).map(([, v]) => v);
-    const capTxt = caps.length ? caps.join("\n") : "Al momento i permessi non bastano per agire sulle pagine.";
-    const closing =
-      noPost.length === 0
-        ? "\n\nIn pratica posso **pubblicare i tuoi contenuti in automatico** su queste pagine: dimmi cosa vuoi pubblicare e quando! 😊"
-        : `\n\n⚠️ Una cosa: su **${noPost.join(", ")}** non ho ancora il permesso di pubblicare. Per attivarlo va rigenerato quel token includendo la gestione dei post.`;
+    const possible = POSSIBLE.filter(([k]) => granted.has(k)).map(([, v]) => v);
+    const canPublish = granted.has("pages_manage_posts") && noPost.length === 0;
     const intro = allPages.length === 1 ? "Ho accesso a **1** pagina Facebook:" : `Ho accesso a **${allPages.length}** pagine Facebook:`;
-    return { finalResult: `${intro}\n${pagesTxt}\n\n**Ecco cosa posso fare per te su queste pagine:**\n${capTxt}${closing}` };
+
+    let body = `${intro}\n${pagesTxt}\n\n**Cosa faccio già per te:**\n`;
+    body += canPublish
+      ? "📝 Pubblico i tuoi post (subito o programmati a calendario) e posso eliminarli."
+      : `📝 Pubblicare i post${noPost.length ? ` — ma su **${noPost.join(", ")}** manca ancora il permesso (va rigenerato quel token con la gestione post).` : ""}`;
+    if (possible.length) {
+      body += "\n\n**Ho anche i permessi per queste cose** (funzioni che possiamo attivare quando vuoi, ma che oggi non faccio ancora in automatico):\n" + possible.join("\n");
+    }
+    body += "\n\nPer ora dimmi pure cosa pubblicare e quando! 😊";
+    return { finalResult: body };
   }
 
   if (allPages.length === 0) {
