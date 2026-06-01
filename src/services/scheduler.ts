@@ -166,7 +166,7 @@ async function runJob(prisma: PrismaClient, job: any, opts: { preview?: boolean 
       }
     }
 
-    await prisma.scheduledJobRun.update({
+    if (run) await prisma.scheduledJobRun.update({
       where: { id: run.id },
       data: {
         status: ok ? "OK" : "ERROR",
