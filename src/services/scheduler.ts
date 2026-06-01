@@ -4,7 +4,7 @@ import { executePythonScript } from "./dockerService";
 import { decryptSecret } from "../utils/crypto";
 import { FACEBOOK_POST_SCRIPT, WEBSITE_SCRAPE_SCRIPT } from "./socialTemplates";
 import { modelForLevel } from "./aiLevels";
-import { chargeUser } from "./tokenMeter";
+import { chargeUser, chargeFlat } from "./tokenMeter";
 import { scanAgentComments } from "./commentResponder";
 
 const TICK_MS = 60_000;
@@ -26,8 +26,8 @@ export function computeNextRun(cronExpression: string, timezone: string, from: D
   }
 }
 
-async function runJob(prisma: PrismaClient, job: any): Promise<void> {
-  const run = await prisma.scheduledJobRun.create({ data: { jobId: job.id, status: "OK" } });
+async function runJob(prisma: PrismaClient, job: any, opts: { preview?: boolean } = {}): Promise<{ caption: string; image: string } | void> {
+  const run = opts.preview ? null : await prisma.scheduledJobRun.create({ data: { jobId: job.id, status: "OK" } });
   try {
     // Credenziali: prima dall'AGENTE proprietario del job, poi fallback al profilo utente (legacy).
     let credPageId: string | null | undefined;
@@ -52,11 +52,11 @@ async function runJob(prisma: PrismaClient, job: any): Promise<void> {
       companyName = companyName || user?.companyName;
     }
     // Agente social (pagina FB): fornisce pagina, branding e (se ha una connessione) il token da usare.
-    let sa: { fbPageId: string; bizName: string | null; bizAddress: string | null; bizWhatsapp: string | null; bizWebsite: string | null; connection: { accessToken: string } | null } | null = null;
+    let sa: { fbPageId: string; bizName: string | null; bizAddress: string | null; bizWhatsapp: string | null; bizWebsite: string | null; bizContext: string | null; imagePool: string[]; autoImage: boolean; connection: { accessToken: string } | null } | null = null;
     if (job.socialAgentId) {
       sa = await prisma.socialAgent.findUnique({
         where: { id: job.socialAgentId },
-        select: { fbPageId: true, bizName: true, bizAddress: true, bizWhatsapp: true, bizWebsite: true, connection: { select: { accessToken: true } } },
+        select: { fbPageId: true, bizName: true, bizAddress: true, bizWhatsapp: true, bizWebsite: true, bizContext: true, imagePool: true, autoImage: true, connection: { select: { accessToken: true } } },
       });
     }
     // Token: prima quello della connessione dell'agente (token multipli), poi il token di default del profilo.
@@ -86,6 +86,11 @@ async function runJob(prisma: PrismaClient, job: any): Promise<void> {
       BIZ_ADDRESS: job.bizAddress || sa?.bizAddress || "",
       BIZ_WHATSAPP: job.bizWhatsapp || sa?.bizWhatsapp || "",
       BIZ_WEBSITE: job.bizWebsite || sa?.bizWebsite || "",
+      // Immagini: pool caricato + generazione AI quando manca
+      POOL_FILES: (sa?.imagePool || []).join(","),
+      POOL_INDEX: String(job.cursor || 0),
+      AUTO_IMAGE: sa?.autoImage ? "true" : "false",
+      IMAGE_CONTEXT: sa?.bizContext || job.bizName || sa?.bizName || companyName || "",
     };
 
     // WEBSITE: la PRIMA volta fa scraping del sito e salva i contenuti; poi ruota tra quelli salvati
@@ -122,12 +127,30 @@ async function runJob(prisma: PrismaClient, job: any): Promise<void> {
       env.WEB_IMAGE = it.imageUrl || "";
     }
 
+    if (opts.preview) env.PREVIEW = "true";
     const result = await executePythonScript(FACEBOOK_POST_SCRIPT, { env, workspace: job.userId });
 
     // Conteggia i token della caption AI (riportati dallo script come "AI_USAGE p c model")
     const um = (result.output || "").match(/AI_USAGE (\d+) (\d+) (\S+)/);
     if (um) {
       await chargeUser(prisma, job.userId, [{ model: um[3], prompt: parseInt(um[1], 10), completion: parseInt(um[2], 10) }], "social").catch(() => {});
+    }
+    // Immagini generate con l'AI dentro il post: 10.000 token ciascuna
+    const aiImgs = (result.output || "").match(/^\s*IMG_AI_GENERATED\s*$/gim);
+    if (aiImgs && aiImgs.length) {
+      await chargeFlat(prisma, job.userId, 10000 * aiImgs.length, "google/gemini-3.1-flash-image-preview", "image").catch(() => {});
+    }
+
+    // ANTEPRIMA: non pubblica, non scrive lo stato. Restituisce caption + immagine.
+    if (opts.preview) {
+      const pm = (result.output || "").match(/PREVIEW_JSON (.+)/);
+      if (pm) {
+        try {
+          const d = JSON.parse(pm[1]);
+          return { caption: String(d.caption || ""), image: String(d.image || "") };
+        } catch { /* json non valido */ }
+      }
+      throw new Error("Anteprima non riuscita: " + ((result.output || result.error || "").slice(0, 300)));
     }
 
     const out = (result.output || "").slice(0, 2000);
@@ -170,25 +193,34 @@ async function runJob(prisma: PrismaClient, job: any): Promise<void> {
     });
     console.log(`[Scheduler] Job ${job.id} (${job.name}): ${ok ? "OK" : "ERRORE"}`);
   } catch (e: any) {
-    await prisma.scheduledJobRun
-      .update({
-        where: { id: run.id },
-        data: { status: "ERROR", error: String(e.message).slice(0, 2000), finishedAt: new Date() },
-      })
-      .catch(() => {});
-    await prisma.scheduledJob
-      .update({
-        where: { id: job.id },
-        data: {
-          lastRunAt: new Date(),
-          lastStatus: "ERROR",
-          lastError: String(e.message).slice(0, 500),
-          nextRunAt: computeNextRun(job.cronExpression, job.timezone),
-        },
-      })
-      .catch(() => {});
+    if (run) {
+      await prisma.scheduledJobRun
+        .update({
+          where: { id: run.id },
+          data: { status: "ERROR", error: String(e.message).slice(0, 2000), finishedAt: new Date() },
+        })
+        .catch(() => {});
+      await prisma.scheduledJob
+        .update({
+          where: { id: job.id },
+          data: {
+            lastRunAt: new Date(),
+            lastStatus: "ERROR",
+            lastError: String(e.message).slice(0, 500),
+            nextRunAt: computeNextRun(job.cronExpression, job.timezone),
+          },
+        })
+        .catch(() => {});
+    }
     console.error(`[Scheduler] Job ${job.id} errore:`, e.message);
+    if (opts.preview) throw e; // propaga all'endpoint di anteprima
   }
+}
+
+// Esegue un job in modalita ANTEPRIMA: genera testo+immagine SENZA pubblicare.
+export async function previewJob(prisma: PrismaClient, job: any): Promise<{ caption: string; image: string }> {
+  const r = await runJob(prisma, job, { preview: true });
+  return r || { caption: "", image: "" };
 }
 
 async function tick(prisma: PrismaClient): Promise<void> {

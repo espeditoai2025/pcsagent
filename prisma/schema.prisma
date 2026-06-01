@@ -139,6 +139,11 @@ model SocialAgent {
   active        Boolean        @default(true)
   // Contesto attività: descrizione di cosa fa l'azienda / servizi offerti (per l'AI)
   bizContext    String?
+  // Immagini del brand caricate dall'utente (filename in shared_data/<userId>): usate
+  // a rotazione quando il contenuto non ha un'immagine propria.
+  imagePool     String[]       @default([])
+  // Genera un'immagine con l'AI (10.000 token) quando manca un'immagine adatta.
+  autoImage     Boolean        @default(false)
   // Risposta automatica ai commenti
   autoReply         Boolean   @default(false)
   autoReplyEveryMin Int       @default(60)

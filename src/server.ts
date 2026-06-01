@@ -11,7 +11,7 @@ import { PrismaClient } from "@prisma/client";
 const pdfParse = require("pdf-parse");
 import { processAndStoreDocument } from "./utils/embeddings";
 import { extractAndUpdateMemory } from "./services/memoryService";
-import { startScheduler } from "./services/scheduler";
+import { startScheduler, previewJob } from "./services/scheduler";
 import { usageStore, chargeUser } from "./services/tokenMeter";
 import { modelForLevel } from "./services/aiLevels";
 import dotenv from "dotenv";
@@ -382,6 +382,22 @@ app.post("/api/chat", async (c) => {
       });
     }
   });
+});
+
+// Anteprima di una pubblicazione (genera testo+immagine SENZA pubblicare).
+app.post("/api/social/preview", async (c) => {
+  try {
+    const body = await c.req.json();
+    const jobId = String(body.jobId || "");
+    const userId = String(body.userId || "");
+    if (!jobId || !userId) return c.json({ error: "Parametri mancanti" }, 400);
+    const job = await prisma.scheduledJob.findFirst({ where: { id: jobId, userId } });
+    if (!job) return c.json({ error: "Pubblicazione non trovata" }, 404);
+    const r = await previewJob(prisma, job);
+    return c.json({ caption: r.caption, image: r.image });
+  } catch (e: any) {
+    return c.json({ error: e?.message || "Anteprima non riuscita" }, 500);
+  }
 });
 
 const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;

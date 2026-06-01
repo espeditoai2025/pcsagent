@@ -18,7 +18,7 @@
  *   COMPANY_NAME  = nome azienda dal profilo (fallback se BIZ_NAME vuoto)
  */
 export const FACEBOOK_POST_SCRIPT = String.raw`
-import os, re, sys, json, random
+import os, re, sys, json, random, base64
 import pandas as pd
 import requests
 
@@ -42,6 +42,14 @@ biz_address = os.environ.get("BIZ_ADDRESS", "").strip()
 biz_whatsapp = os.environ.get("BIZ_WHATSAPP", "").strip()
 biz_website = os.environ.get("BIZ_WEBSITE", "").strip()
 
+# Immagini: pool caricato dall'utente + generazione AI quando manca + anteprima
+pool_files = [f.strip() for f in os.environ.get("POOL_FILES", "").split(",") if f.strip()]
+pool_index = int(os.environ.get("POOL_INDEX", "0") or "0")
+auto_image = os.environ.get("AUTO_IMAGE", "").strip().lower() == "true"
+image_context = os.environ.get("IMAGE_CONTEXT", "").strip()
+image_ai_model = os.environ.get("IMAGE_AI_MODEL", "").strip() or "google/gemini-3.1-flash-image-preview"
+preview_mode = os.environ.get("PREVIEW", "").strip().lower() == "true"
+
 USAGE = {"p": 0, "c": 0}  # token AI accumulati (per il conteggio crediti)
 
 if not page_id or not token:
@@ -58,8 +66,11 @@ try:
 except Exception:
     pass
 
-def publish(message, image_url=None):
-    if image_url and str(image_url).lower().startswith("http"):
+def publish(message, image_url=None, image_file=None):
+    if image_file and os.path.exists(image_file):
+        with open(image_file, "rb") as fh:
+            r = requests.post(f"{GRAPH}/{page_id}/photos", data={"caption": message, "access_token": post_token}, files={"source": fh}, timeout=120)
+    elif image_url and str(image_url).lower().startswith("http"):
         r = requests.post(f"{GRAPH}/{page_id}/photos", data={"url": image_url, "caption": message, "access_token": post_token}, timeout=60)
     else:
         r = requests.post(f"{GRAPH}/{page_id}/feed", data={"message": message, "access_token": post_token}, timeout=60)
@@ -68,9 +79,70 @@ def publish(message, image_url=None):
         return True, (b.get("post_id") or b.get("id"))
     return False, f"HTTP {r.status_code}: {json.dumps(b)[:300]}"
 
+def _gen_ai_image(subject):
+    # Genera un'immagine col modello AI, salva in /app/data, ritorna il path (o None).
+    if not openrouter_key:
+        return None
+    try:
+        pr = (f"Crea un'immagine professionale e accattivante per un post Facebook di {biz_name}. "
+              f"Contesto dell'attivita: {image_context or biz_name}. Soggetto del post: {str(subject)[:300]}. "
+              f"Stile pulito e moderno, colori coerenti col brand, adatta ai social, SENZA testo sovraimpresso.")
+        r = requests.post("https://openrouter.ai/api/v1/chat/completions",
+            headers={"Authorization": f"Bearer {openrouter_key}", "Content-Type": "application/json"},
+            json={"model": image_ai_model, "messages": [{"role": "user", "content": pr}]}, timeout=90)
+        if r.status_code != 200:
+            return None
+        msg = (r.json().get("choices") or [{}])[0].get("message", {}) or {}
+        url = None
+        for im in (msg.get("images") or []):
+            url = (im.get("image_url") or {}).get("url") or im.get("url")
+            if url:
+                break
+        if not url:
+            return None
+        if url.startswith("data:"):
+            data = base64.b64decode(url.split(",", 1)[1])
+        else:
+            data = requests.get(url, timeout=60).content
+        path = "/app/data/_aiimg_%d.jpg" % random.randint(1000, 9999999)
+        with open(path, "wb") as f:
+            f.write(data)
+        print("IMG_AI_GENERATED")  # 10.000 token (addebito flat lato server)
+        return path
+    except Exception as e:
+        print(f"(immagine AI fallita: {e})")
+        return None
+
+def resolve_image(content_image_url, subject):
+    # Cascata: 1) immagine del contenuto  2) pool caricato (rotazione)  3) AI se abilitato
+    if content_image_url and str(content_image_url).lower().startswith("http"):
+        return content_image_url, None
+    if pool_files:
+        fn = pool_files[pool_index % len(pool_files)]
+        p = os.path.join("/app/data", fn)
+        if os.path.exists(p):
+            return None, p
+    if auto_image:
+        p = _gen_ai_image(subject)
+        if p:
+            return None, p
+    return None, None
+
+def emit_preview(caption, image_url=None, image_file=None):
+    # Anteprima: NON pubblica. Restituisce caption + riferimento immagine per il pannello.
+    img = ""
+    if image_url:
+        img = image_url
+    elif image_file and os.path.exists(image_file):
+        img = "file:" + os.path.basename(image_file)  # il frontend lo serve via /api/files
+    print("PREVIEW_JSON " + json.dumps({"caption": caption, "image": img}))
+
 # --- Modalita TEXT: singolo post di testo (test) ---
 if source_type == "TEXT":
     caption = caption_template.strip() or "Post di test da PCS Agent: la connessione alla pagina Facebook funziona correttamente."
+    if preview_mode:
+        emit_preview(caption)
+        sys.exit(0)
     ok, msg = publish(caption)
     if ok:
         print(f"POST_OK {msg} | {caption[:80]}")
@@ -115,7 +187,12 @@ if source_type == "WEBSITE":
     if biz_website: footer.append(f"🌐 {biz_website}")
     if footer:
         caption = caption.rstrip() + "\n\n" + "\n".join(footer)
-    ok, msg = publish(caption, web_image or None)
+    img_url, img_file = resolve_image(web_image, web_title or web_content)
+    if preview_mode:
+        emit_preview(caption, img_url, img_file)
+        print(f"AI_USAGE {USAGE['p']} {USAGE['c']} {ai_model}")
+        sys.exit(0)
+    ok, msg = publish(caption, img_url, img_file)
     print(f"AI_USAGE {USAGE['p']} {USAGE['c']} {ai_model}")
     if ok:
         print(f"POST_OK web (id {msg}): {caption[:70]}")
@@ -253,12 +330,21 @@ if selection_mode == "RANDOM":
 else:
     indices = [(row_index + k) % n for k in range(posts_per_run)]
 
-# 3) Pubblica
+# 3a) Anteprima: genera solo il primo elemento e mostralo, senza pubblicare
+if preview_mode:
+    caption, image_url = build_caption(df.iloc[indices[0]])
+    img_url, img_file = resolve_image(image_url, caption)
+    emit_preview(caption, img_url, img_file)
+    print(f"AI_USAGE {USAGE['p']} {USAGE['c']} {ai_model}")
+    sys.exit(0)
+
+# 3b) Pubblica
 n_ok = 0
 for i in indices:
     try:
         caption, image_url = build_caption(df.iloc[i])
-        ok, msg = publish(caption, image_url)
+        img_url, img_file = resolve_image(image_url, caption)
+        ok, msg = publish(caption, img_url, img_file)
         if ok:
             n_ok += 1
             print(f"POST_OK riga {i} (id {msg}): {caption[:70]}")
