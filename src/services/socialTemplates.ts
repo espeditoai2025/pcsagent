@@ -67,6 +67,10 @@ except Exception:
     pass
 
 def publish(message, image_url=None, image_file=None):
+    # Facebook "collassa" le righe vuote nei post via API: inserisco un carattere
+    # invisibile (Braille blank U+2800) sulle righe vuote per preservare la
+    # spaziatura tra i paragrafi (cosi il post pubblicato corrisponde all'anteprima).
+    message = re.sub(r"\n{2,}", "\n⠀\n", message)
     if image_file and os.path.exists(image_file):
         with open(image_file, "rb") as fh:
             r = requests.post(f"{GRAPH}/{page_id}/photos", data={"caption": message, "access_token": post_token}, files={"source": fh}, timeout=120)
