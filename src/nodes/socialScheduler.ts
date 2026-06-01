@@ -17,8 +17,8 @@ const prisma = new PrismaClient();
 
 const jobSchema = z.object({
   intent: z
-    .enum(["TEST_NOW", "SCHEDULE", "NEED_INFO", "LIST_INFO", "EXPORT_POSTS"])
-    .describe("TEST_NOW = pubblica subito; SCHEDULE = programma ricorrenti; LIST_INFO = elenca pagine/permessi del token; EXPORT_POSTS = salva gli ultimi N post di una pagina in un CSV; NEED_INFO = mancano dati"),
+    .enum(["TEST_NOW", "SCHEDULE", "NEED_INFO", "LIST_INFO", "LIST_JOBS", "EXPORT_POSTS"])
+    .describe("TEST_NOW = pubblica subito; SCHEDULE = programma ricorrenti; LIST_INFO = elenca pagine/permessi del token; LIST_JOBS = elenca le pubblicazioni PROGRAMMATE/cron e il loro stato, o spiega perché non è stato pubblicato; EXPORT_POSTS = salva gli ultimi N post di una pagina in un CSV; NEED_INFO = mancano dati"),
   count: z.number().describe("Per EXPORT_POSTS: quanti post salvare (es. 'ultimi 10 post' = 10; default 10)"),
   missingInfo: z.string().describe("Se intent=NEED_INFO, messaggio IN PRIMA PERSONA che chiede cosa manca"),
   targetPageName: z.string().describe("Nome della pagina Facebook su cui pubblicare, se indicato dall'utente; altrimenti stringa vuota"),
@@ -75,6 +75,9 @@ Il token è GIÀ configurato e l'utente può amministrare PIÙ pagine.
   dati (GOOGLE_SHEET con URL o EXCEL con nome file). captionTemplate con segnaposto {colonna} se descritto.
 - intent=EXPORT_POSTS: l'utente vuole SALVARE/ESPORTARE gli ultimi N post di una pagina in un file CSV
   (es. "salvami gli ultimi 10 post della pagina X in un csv", "esporta i post di Pcs Bus"). Metti count = N (default 10).
+- intent=LIST_JOBS: l'utente chiede quali PUBBLICAZIONI PROGRAMMATE / cron / automazioni ha attive, o
+  PERCHÉ non è stato pubblicato (es. "hai cron job impostati?", "che pubblicazioni hai in programma?",
+  "perché non hai pubblicato oggi su Pcs Store?", "hai automazioni attive?", "quando esce il prossimo post?").
 - intent=NEED_INFO: SOLO se per SCHEDULE manca la fonte dati o la frequenza.`;
 
   let parsed: z.infer<typeof jobSchema>;
@@ -86,6 +89,38 @@ Il token è GIÀ configurato e l'utente può amministrare PIÙ pagine.
 
   if (parsed.intent === "NEED_INFO") {
     return { finalResult: parsed.missingInfo || "Mi servono ancora alcune informazioni." };
+  }
+
+  // 2.4) LIST_JOBS: quali pubblicazioni programmate ho e perché (non) pubblico
+  if (parsed.intent === "LIST_JOBS") {
+    const fmtDt = (d: Date | null) => (d ? new Date(d).toLocaleString("it-IT", { timeZone: "Europe/Rome", dateStyle: "short", timeStyle: "short" }) : "—");
+    let jobs = await prisma.scheduledJob.findMany({
+      where: { userId },
+      orderBy: { createdAt: "desc" },
+      include: { socialAgent: { select: { name: true } } },
+    });
+    // Se l'utente nomina una pagina, filtra su quella
+    const q = (parsed.targetPageName || "").trim().toLowerCase();
+    if (q) jobs = jobs.filter((j) => (j.fbPageName || j.socialAgent?.name || "").toLowerCase().includes(q));
+
+    if (jobs.length === 0) {
+      const dove = q ? ` per la pagina "${parsed.targetPageName}"` : "";
+      return {
+        finalResult:
+          `Al momento **non hai nessuna pubblicazione programmata attiva**${dove}: per questo non viene pubblicato nulla in automatico.\n\n` +
+          `Se vuoi attivarla, dimmi cosa e quando — es. *"ogni giorno alle 9 pubblica un prodotto dal file prodotti.csv sulla pagina Pcs Store"* — e la imposto subito.`,
+      };
+    }
+    const lines = jobs.map((j) => {
+      const pagina = j.fbPageName || j.socialAgent?.name || "pagina";
+      const stato = j.status === "ACTIVE" ? "🟢 attivo" : "⏸️ in pausa";
+      const esito = j.lastStatus ? (j.lastStatus === "OK" ? " · ultima: ✅" : " · ultima: ❌") : "";
+      return `• **${pagina}** — ${j.name}\n  ${stato} · \`${j.cronExpression}\` · prossima: ${fmtDt(j.nextRunAt)} · ultima esec.: ${fmtDt(j.lastRunAt)}${esito}`;
+    });
+    const attivi = jobs.filter((j) => j.status === "ACTIVE").length;
+    return {
+      finalResult: `📅 **Pubblicazioni programmate** (${jobs.length}, di cui ${attivi} attive):\n${lines.join("\n")}\n\nVuoi crearne una nuova, metterne una in pausa o cambiarle l'orario?`,
+    };
   }
 
   // Elenca le pagine da TUTTE le sorgenti (profilo + connessioni), dedup per id.
