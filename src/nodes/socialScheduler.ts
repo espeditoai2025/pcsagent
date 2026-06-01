@@ -24,8 +24,8 @@ const jobSchema = z.object({
   targetPageName: z.string().describe("Nome della pagina Facebook su cui pubblicare, se indicato dall'utente; altrimenti stringa vuota"),
   name: z.string().describe("Nome breve del job (solo per SCHEDULE)"),
   cronExpression: z.string().describe("Cron a 5 campi (solo SCHEDULE). Es: ogni giorno alle 9 = '0 9 * * *'"),
-  sourceType: z.enum(["GOOGLE_SHEET", "EXCEL", "CSV", "TEXT"]).describe("TEXT = post di solo testo (tipico per un test rapido); CSV/EXCEL = file caricato; GOOGLE_SHEET = link"),
-  sourceRef: z.string().describe("URL Google Sheet o nome file .csv/.xlsx; vuoto se sourceType=TEXT"),
+  sourceType: z.enum(["GOOGLE_SHEET", "EXCEL", "CSV", "TEXT", "WEBSITE"]).describe("TEXT = post di solo testo; CSV/EXCEL = file caricato; GOOGLE_SHEET = link foglio; WEBSITE = un sito web da cui generare post (es. 'genera post dal sito www.esempio.it')"),
+  sourceRef: z.string().describe("URL Google Sheet, URL del sito (se WEBSITE), o nome file .csv/.xlsx; vuoto se sourceType=TEXT"),
   captionTemplate: z.string().describe("Per SCHEDULE: template con {colonna}. Per TEST_NOW/TEXT: il testo del post. Vuoto = default"),
   selectionMode: z.enum(["SEQUENTIAL", "RANDOM"]),
   postsPerRun: z.number().describe("Quanti prodotti pubblicare ad ogni esecuzione (default 1, se l'utente dice es. '3 prodotti')"),
@@ -72,7 +72,8 @@ Il token è GIÀ configurato e l'utente può amministrare PIÙ pagine.
 - intent=TEST_NOW: vuole pubblicare SUBITO (es. "fai un test", "pubblica ora"). Se non indica una fonte dati usa
   sourceType=TEXT (captionTemplate = testo del post se specificato, altrimenti vuoto).
 - intent=SCHEDULE: pubblicazioni RICORRENTI. Servono frequenza (cronExpression da linguaggio naturale) e fonte
-  dati (GOOGLE_SHEET con URL o EXCEL con nome file). captionTemplate con segnaposto {colonna} se descritto.
+  dati (GOOGLE_SHEET con URL, EXCEL/CSV con nome file, oppure WEBSITE con l'URL di un sito da cui generare i post).
+  captionTemplate con segnaposto {colonna} se descritto.
 - intent=EXPORT_POSTS: l'utente vuole SALVARE/ESPORTARE gli ultimi N post di una pagina in un file CSV
   (es. "salvami gli ultimi 10 post della pagina X in un csv", "esporta i post di Pcs Bus"). Metti count = N (default 10).
 - intent=LIST_JOBS: l'utente chiede quali PUBBLICAZIONI PROGRAMMATE / cron / automazioni ha attive, o
@@ -315,7 +316,11 @@ Il token è GIÀ configurato e l'utente può amministrare PIÙ pagine.
         nextRunAt,
       },
     });
-    const fonte = parsed.sourceType === "GOOGLE_SHEET" ? "Google Sheet" : parsed.sourceType === "EXCEL" ? `file Excel (${parsed.sourceRef})` : "testo";
+    const fonte =
+      parsed.sourceType === "GOOGLE_SHEET" ? "Google Sheet"
+      : parsed.sourceType === "WEBSITE" ? `sito web (${parsed.sourceRef})`
+      : parsed.sourceType === "EXCEL" || parsed.sourceType === "CSV" ? `file (${parsed.sourceRef})`
+      : "testo";
     const quando = nextRunAt.toLocaleString("it-IT", { timeZone: "Europe/Rome" });
     return {
       finalResult:

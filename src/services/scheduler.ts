@@ -2,7 +2,7 @@ import { PrismaClient } from "@prisma/client";
 import parser from "cron-parser";
 import { executePythonScript } from "./dockerService";
 import { decryptSecret } from "../utils/crypto";
-import { FACEBOOK_POST_SCRIPT } from "./socialTemplates";
+import { FACEBOOK_POST_SCRIPT, WEBSITE_SCRAPE_SCRIPT } from "./socialTemplates";
 import { modelForLevel } from "./aiLevels";
 import { chargeUser } from "./tokenMeter";
 import { scanAgentComments } from "./commentResponder";
@@ -88,6 +88,40 @@ async function runJob(prisma: PrismaClient, job: any): Promise<void> {
       BIZ_WEBSITE: job.bizWebsite || sa?.bizWebsite || "",
     };
 
+    // WEBSITE: la PRIMA volta fa scraping del sito e salva i contenuti; poi ruota tra quelli salvati
+    // (niente ri-scraping) e genera un post nuovo+diverso con immagine.
+    if (job.sourceType === "WEBSITE") {
+      let items = await prisma.scrapedItem.findMany({ where: { scheduledJobId: job.id }, orderBy: { createdAt: "asc" } });
+      if (items.length === 0) {
+        const scrape = await executePythonScript(WEBSITE_SCRAPE_SCRIPT, { env: { SCRAPE_URL: job.sourceRef }, workspace: job.userId });
+        const m = (scrape.output || "").match(/SCRAPE_JSON (.+)/);
+        if (m) {
+          try {
+            const arr = JSON.parse(m[1]);
+            if (Array.isArray(arr) && arr.length) {
+              await prisma.scrapedItem.createMany({
+                data: arr.slice(0, 30).map((x: any) => ({
+                  scheduledJobId: job.id,
+                  title: String(x.title || "").slice(0, 200) || null,
+                  content: String(x.content || "").slice(0, 2000),
+                  imageUrl: String(x.imageUrl || "").slice(0, 1000) || null,
+                  sourceUrl: String(x.sourceUrl || job.sourceRef).slice(0, 1000),
+                })),
+              });
+              items = await prisma.scrapedItem.findMany({ where: { scheduledJobId: job.id }, orderBy: { createdAt: "asc" } });
+            }
+          } catch { /* JSON non valido */ }
+        }
+        if (items.length === 0) {
+          throw new Error("Scraping del sito non riuscito o nessun contenuto trovato. " + (scrape.output || scrape.error || "").slice(0, 200));
+        }
+      }
+      const it = items[(job.cursor || 0) % items.length];
+      env.WEB_TITLE = it.title || "";
+      env.WEB_CONTENT = it.content || "";
+      env.WEB_IMAGE = it.imageUrl || "";
+    }
+
     const result = await executePythonScript(FACEBOOK_POST_SCRIPT, { env, workspace: job.userId });
 
     // Conteggia i token della caption AI (riportati dallo script come "AI_USAGE p c model")
@@ -122,7 +156,7 @@ async function runJob(prisma: PrismaClient, job: any): Promise<void> {
     const nextCursor =
       job.selectionMode === "RANDOM"
         ? Math.floor(Math.random() * 100000)
-        : (job.cursor || 0) + (job.postsPerRun || 1); // avanza di N prodotti
+        : (job.cursor || 0) + (job.sourceType === "WEBSITE" ? 1 : (job.postsPerRun || 1)); // WEBSITE: 1 contenuto/post per volta
 
     await prisma.scheduledJob.update({
       where: { id: job.id },

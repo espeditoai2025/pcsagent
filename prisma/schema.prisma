@@ -72,8 +72,8 @@ model ScheduledJob {
   timezone       String             @default("Europe/Rome")
   fbPageId       String? // pagina target di QUESTO job (un utente puo gestire piu pagine)
   fbPageName     String?
-  sourceType     String             @default("GOOGLE_SHEET")
-  sourceRef      String // URL Google Sheet oppure filename Excel in shared_data
+  sourceType     String             @default("GOOGLE_SHEET") // GOOGLE_SHEET | EXCEL | CSV | TEXT | WEBSITE
+  sourceRef      String // URL Google Sheet/sito oppure filename in shared_data
   captionTemplate String?           // es. "{nome} a soli {prezzo}€! {descrizione}"
   aiCaption      Boolean            @default(true) // caption generata dall'AI (post "che vende")
   aiModel        String?            // legacy: modello esplicito (sostituito da aiLevel)
@@ -93,10 +93,26 @@ model ScheduledJob {
   createdAt      DateTime           @default(now())
   updatedAt      DateTime           @updatedAt
   runs           ScheduledJobRun[]
+  scrapedItems   ScrapedItem[]
 
   @@index([userId])
   @@index([status, nextRunAt])
   @@index([socialAgentId])
+}
+
+// Contenuti estratti UNA VOLTA da un sito web (sourceType=WEBSITE) e salvati:
+// da questi l'agente genera post sempre diversi, senza ri-scrapare ogni volta.
+model ScrapedItem {
+  id             String       @id @default(uuid())
+  scheduledJobId String
+  job            ScheduledJob @relation(fields: [scheduledJobId], references: [id], onDelete: Cascade)
+  title          String?
+  content        String       // testo del blocco estratto
+  imageUrl       String?
+  sourceUrl      String?
+  createdAt      DateTime     @default(now())
+
+  @@index([scheduledJobId])
 }
 
 // ===== AGENTE SOCIAL PER PAGINA =====

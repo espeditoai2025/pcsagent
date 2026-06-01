@@ -78,6 +78,51 @@ if source_type == "TEXT":
     print(f"ERRORE pubblicazione Facebook ({msg})")
     sys.exit(1)
 
+# --- Modalita WEBSITE: genera un post NUOVO da un contenuto gia estratto dal sito ---
+if source_type == "WEBSITE":
+    web_title = os.environ.get("WEB_TITLE", "").strip()
+    web_content = os.environ.get("WEB_CONTENT", "").strip()
+    web_image = os.environ.get("WEB_IMAGE", "").strip()
+    caption = ""
+    if ai_caption and openrouter_key and web_content:
+        prompt = (
+            f"Sei il social media manager di {biz_name}. Scrivi un post Facebook ACCATTIVANTE e ORIGINALE "
+            f"basato sul seguente contenuto del nostro sito. RIELABORALO con parole NUOVE (non copiarlo), "
+            f"ogni volta in modo diverso. FORMATTAZIONE: testo ben spaziato su piu righe separate da una riga "
+            f"vuota, qualche emoji, e una breve call-to-action finale.\n"
+            f"Tono: {ai_tone}. NON inventare dati o prezzi non presenti. NON scrivere indirizzo, telefono, "
+            f"WhatsApp o sito (li aggiungo io sotto). Rispondi SOLO col testo del post, senza virgolette.\n\n"
+            f"Titolo: {web_title}\nContenuto: {web_content[:1500]}"
+        )
+        try:
+            air = requests.post("https://openrouter.ai/api/v1/chat/completions",
+                headers={"Authorization": f"Bearer {openrouter_key}", "Content-Type": "application/json"},
+                json={"model": ai_model, "temperature": 0.95, "messages": [{"role": "user", "content": prompt}]}, timeout=45)
+            if air.status_code == 200:
+                _aj = air.json()
+                caption = _aj["choices"][0]["message"]["content"].strip().strip('"')
+                _u = _aj.get("usage", {}) or {}
+                USAGE["p"] += _u.get("prompt_tokens", 0) or 0
+                USAGE["c"] += _u.get("completion_tokens", 0) or 0
+        except Exception as e:
+            print(f"(AI caption fallita, uso fallback: {e})")
+    if not caption:
+        caption = ((web_title + "\n\n") if web_title else "") + web_content[:300]
+        caption = caption.strip() or "Scopri le nostre novita!"
+    footer = []
+    if biz_address: footer.append(f"📍 {biz_address}")
+    if biz_whatsapp: footer.append(f"📲 {biz_whatsapp}")
+    if biz_website: footer.append(f"🌐 {biz_website}")
+    if footer:
+        caption = caption.rstrip() + "\n\n" + "\n".join(footer)
+    ok, msg = publish(caption, web_image or None)
+    print(f"AI_USAGE {USAGE['p']} {USAGE['c']} {ai_model}")
+    if ok:
+        print(f"POST_OK web (id {msg}): {caption[:70]}")
+        sys.exit(0)
+    print(f"ERRORE pubblicazione Facebook ({msg})")
+    sys.exit(1)
+
 if not source_ref:
     print("ERRORE: fonte dati non configurata (SOURCE_REF vuoto).")
     sys.exit(1)
@@ -225,4 +270,72 @@ for i in indices:
 print(f"\nRIEPILOGO: {n_ok}/{len(indices)} pubblicati su {biz_name}")
 print(f"AI_USAGE {USAGE['p']} {USAGE['c']} {ai_model}")
 sys.exit(0 if n_ok > 0 else 1)
+`;
+
+/**
+ * Scraping di un sito web (UNA TANTUM) con Playwright: estrae blocchi di testo
+ * significativi + immagini e li stampa come JSON ("SCRAPE_JSON [...]").
+ * ENV: SCRAPE_URL = url del sito.
+ */
+export const WEBSITE_SCRAPE_SCRIPT = String.raw`
+import os, json
+from playwright.sync_api import sync_playwright
+
+url = os.environ.get("SCRAPE_URL", "").strip()
+if not url:
+    print("SCRAPE_ERR nessun URL")
+    raise SystemExit(1)
+if not url.lower().startswith("http"):
+    url = "https://" + url
+
+items = []
+try:
+    with sync_playwright() as p:
+        browser = p.chromium.launch(args=["--no-sandbox"])
+        page = browser.new_page(user_agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/120.0 Safari/537.36")
+        page.goto(url, wait_until="networkidle", timeout=45000)
+        site_title = (page.title() or "").strip()
+        blocks = page.eval_on_selector_all("h1,h2,h3,p,li", "els => els.map(e => (e.innerText||'').trim()).filter(t => t.length > 40)")
+        imgs = page.eval_on_selector_all("img", "els => els.map(e => e.currentSrc || e.src || '').filter(Boolean)")
+        og = ""
+        try:
+            el = page.query_selector("meta[property='og:image']")
+            og = el.get_attribute("content") if el else ""
+        except Exception:
+            og = ""
+        browser.close()
+except Exception as e:
+    print(f"SCRAPE_ERR {e}")
+    raise SystemExit(1)
+
+# Pulisci testi (dedup, niente troppo corti)
+seen = set(); texts = []
+for t in blocks:
+    t = " ".join(str(t).split())
+    if len(t) > 40 and t not in seen:
+        seen.add(t); texts.append(t)
+
+# Pulisci immagini (http assolute, niente svg/data/icone minuscole note)
+good = []
+if og:
+    good.append(og)
+for s in imgs:
+    s = str(s)
+    if s.startswith("//"):
+        s = "https:" + s
+    low = s.lower()
+    if low.startswith("http") and ".svg" not in low and "data:" not in low and "sprite" not in low:
+        if s not in good:
+            good.append(s)
+
+# Costruisci gli item: ogni blocco di testo con un'immagine (a rotazione)
+for i, t in enumerate(texts[:25]):
+    img = good[i % len(good)] if good else ""
+    items.append({"title": site_title[:120], "content": t[:1200], "imageUrl": img, "sourceUrl": url})
+
+if not items:
+    print("SCRAPE_ERR nessun contenuto utile estratto")
+    raise SystemExit(1)
+
+print("SCRAPE_JSON " + json.dumps(items))
 `;
