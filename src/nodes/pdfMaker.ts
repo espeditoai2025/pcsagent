@@ -1,5 +1,5 @@
 import { AgentState } from "../state";
-import { coderModel, makeChatModel } from "../services/llm";
+import { coderModel, makeChatModel, searchModel } from "../services/llm";
 import { SystemMessage, HumanMessage, AIMessage } from "@langchain/core/messages";
 import puppeteer from "puppeteer";
 import * as path from "path";
@@ -255,8 +255,29 @@ RITORNA SOLO L'HTML COMPLETO (<!DOCTYPE html>…</html>). Nessun markdown, nessu
 
   const htmlPrompt = useSaved ? reusePrompt : scratchPrompt;
 
+  // RICERCA REALE (Perplexity Sonar) quando servono caratteristiche/specifiche/dati di un prodotto:
+  // così l'agente NON inventa più le specifiche, ma usa dati veri e verificati.
+  const needsResearch =
+    /\b(caratteristic|specific|scheda tecnica|dati tecnici|dettagli tecnici|informazioni (su|sul|sullo|sulla|sugli|sui)|cerca|aggiorn[ai][^.]*(dati|informazioni|prezz)|prezzo (attuale|di mercato)|trova (i )?dati)\b/i.test(userRequest);
+  let webData = "";
+  if (needsResearch) {
+    try {
+      console.log("PDF Maker: ricerca dati reali via Sonar...");
+      const sysS = `Sei un assistente di ricerca. Dal contesto, individua il prodotto/argomento di cui servono le caratteristiche o i dati e fornisci SOLO informazioni REALI e verificate (specifiche tecniche principali, dati ufficiali). Rispondi in italiano, elenco puntato conciso (max 8 punti). Se un dato non è certo o non esiste, NON inventarlo: omettilo. Nessun preambolo.`;
+      const q = `Contesto:\n${convo || userRequest}\n\nRichiesta attuale: ${userRequest}`;
+      const r = await searchModel.invoke([new SystemMessage(sysS), new HumanMessage(q)]);
+      const txt = ((r.content as string) || "").trim();
+      if (txt) {
+        webData = `=== DATI VERIFICATI DAL WEB (ricerca Perplexity Sonar) ===\nUsa SOLO questi dati per le caratteristiche/specifiche del prodotto. NON aggiungere numeri o dettagli tecnici che non sono presenti qui.\n\n${txt}`;
+      }
+    } catch (e: any) {
+      console.error("PDF Maker: ricerca Sonar fallita:", e?.message);
+    }
+  }
+
   const messages = [
     new SystemMessage(htmlPrompt),
+    ...(webData ? [new SystemMessage(webData)] : []),
     new HumanMessage(userRequest),
   ];
 
