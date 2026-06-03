@@ -8,7 +8,7 @@ import { PrismaClient } from "@prisma/client";
 export const DEFAULT_LEVEL_MODELS: Record<number, string> = {
   1: "google/gemini-3.1-flash-lite", // Base — veloce/economico
   2: "openai/gpt-5.4-mini", // Avanzato
-  3: "anthropic/claude-opus-4.6", // Massimo
+  3: "anthropic/claude-opus-4.8", // Massimo
 };
 
 export const LEVEL_LABELS: Record<number, string> = { 1: "Base", 2: "Avanzato", 3: "Massimo" };
