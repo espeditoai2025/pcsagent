@@ -252,11 +252,15 @@ app.post("/api/chat", async (c) => {
         }
       }
 
-      // 4. Carica tutto lo storico della sessione
-      const history = await prisma.chatMessage.findMany({
+      // 4. Carica lo storico della sessione — SOLO gli ultimi N messaggi (finestra di contesto).
+      // Inviare l'INTERA cronologia ad ogni messaggio fa crescere token e costi all'infinito.
+      const HISTORY_LIMIT = 16; // ~8 scambi: continuità sufficiente, costi sotto controllo
+      const recentHistory = await prisma.chatMessage.findMany({
         where: { sessionId },
-        orderBy: { createdAt: 'asc' }
+        orderBy: { createdAt: 'desc' },
+        take: HISTORY_LIMIT,
       });
+      const history = recentHistory.reverse();
 
       // 4.5. Carica i dati del profilo aziendale dell'utente
       const userProfile = await prisma.user.findUnique({
