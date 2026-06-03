@@ -41,10 +41,13 @@ ANNO: ${annoCorrente}`.trim();
     ? (humanMsgs[humanMsgs.length - 1].content as string)
     : (state.messages[state.messages.length - 1].content as string)) || "";
 
-  const convo = state.messages
-    .filter((m) => m instanceof HumanMessage || m instanceof AIMessage)
-    .slice(-6)
-    .map((m) => `${m instanceof HumanMessage ? "UTENTE" : "AGENTE"}: ${String(m.content).slice(0, 400)}`)
+  // Tieni TUTTI i messaggi dell'utente (portano i dati: cliente, prodotti, prezzi…) + gli ultimi
+  // scambi per contesto. Così su un thread lungo i dati del documento NON escono dalla finestra
+  // (era il bug per cui, rigenerando, si inventava prodotti nuovi tipo "PC + monitor").
+  const convMsgs = state.messages.filter((m) => m instanceof HumanMessage || m instanceof AIMessage);
+  const convo = convMsgs
+    .filter((m, i) => m instanceof HumanMessage || i >= convMsgs.length - 6)
+    .map((m) => `${m instanceof HumanMessage ? "UTENTE" : "AGENTE"}: ${String(m.content).slice(0, 500)}`)
     .join("\n");
 
   // È una revisione di un documento già generato in questa conversazione?
@@ -59,7 +62,7 @@ ${companyInfo}
 
 === RICHIESTA ATTUALE DELL'UTENTE (è la cosa da soddisfare ORA) ===
 ${userRequest}
-${convo ? `\n=== CONVERSAZIONE RECENTE (leggila per capire correzioni e richieste già fatte) ===\n${convo}\n\n⚠️ APPLICA TUTTE le correzioni richieste finora. Se l'utente ha chiesto di TOGLIERE o CAMBIARE qualcosa, NON rimetterlo nella nuova versione. Stai rigenerando il documento da zero: deve riflettere l'ULTIMA volontà dell'utente.\n` : ""}
+${convo ? `\n=== CONVERSAZIONE (leggila TUTTA: contiene i dati del documento e le correzioni) ===\n${convo}\n\n⚠️ REGOLE PER LE REVISIONI (fondamentali):\n- I DATI del documento (cliente, indirizzo, prodotti, quantità, prezzi, intestazione) sono quelli che l'utente ha indicato nei suoi messaggi qui sopra: USA SEMPRE QUELLI.\n- Se l'utente chiede solo di correggere/sistemare (es. "rimedia", "fai stare in una pagina", "cambia colore", "aggiungi le caratteristiche"), MANTIENI identici cliente, prodotti, quantità e prezzi: cambia SOLO ciò che ha chiesto. NON sostituire i prodotti con altri e NON inventare nuovi articoli (es. PC, monitor) che l'utente non ha mai citato.\n- Se l'utente ha chiesto di TOGLIERE o CAMBIARE qualcosa, NON rimetterlo. Il documento deve riflettere l'ULTIMA volontà dell'utente, partendo dai dati reali della conversazione.\n` : ""}
 
 === REGOLE DI DESIGN OBBLIGATORIE ===
 
