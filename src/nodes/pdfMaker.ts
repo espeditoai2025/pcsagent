@@ -1,6 +1,6 @@
 import { AgentState } from "../state";
-import { coderModel } from "../services/llm";
-import { SystemMessage, HumanMessage } from "@langchain/core/messages";
+import { coderModel, makeChatModel } from "../services/llm";
+import { SystemMessage, HumanMessage, AIMessage } from "@langchain/core/messages";
 import puppeteer from "puppeteer";
 import * as path from "path";
 import * as fs from "fs/promises";
@@ -33,26 +33,45 @@ Sito Web: ${u.website || ""}
 DATA DOCUMENTO: ${oggi}
 ANNO: ${annoCorrente}`.trim();
 
-  const userRequest = state.messages[state.messages.length - 1].content as string;
+  // Usa la VERA richiesta dell'utente (ultimo messaggio umano), NON la decisione del supervisor
+  // (che è l'ultimo messaggio dopo il routing). E ricostruisci un breve storico per capire
+  // le correzioni iterative ("togli il testo in mezzo", "cambia colore", ecc.).
+  const humanMsgs = state.messages.filter((m) => m instanceof HumanMessage);
+  const userRequest = (humanMsgs.length
+    ? (humanMsgs[humanMsgs.length - 1].content as string)
+    : (state.messages[state.messages.length - 1].content as string)) || "";
+
+  const convo = state.messages
+    .filter((m) => m instanceof HumanMessage || m instanceof AIMessage)
+    .slice(-6)
+    .map((m) => `${m instanceof HumanMessage ? "UTENTE" : "AGENTE"}: ${String(m.content).slice(0, 400)}`)
+    .join("\n");
+
+  // È una revisione di un documento già generato in questa conversazione?
+  const isRevision = state.messages.some(
+    (m) => typeof m.content === "string" && (m.content as string).startsWith("PDF generato:")
+  );
 
   const htmlPrompt = `Sei un designer UI/UX esperto in documenti aziendali. Genera un documento HTML/CSS completo, impaginato in formato A4, con grafica PROFESSIONALE e MODERNA.
 
 === DATI AZIENDALI DA INTEGRARE ===
 ${companyInfo}
 
-=== RICHIESTA DELL'UTENTE ===
+=== RICHIESTA ATTUALE DELL'UTENTE (è la cosa da soddisfare ORA) ===
 ${userRequest}
+${convo ? `\n=== CONVERSAZIONE RECENTE (leggila per capire correzioni e richieste già fatte) ===\n${convo}\n\n⚠️ APPLICA TUTTE le correzioni richieste finora. Se l'utente ha chiesto di TOGLIERE o CAMBIARE qualcosa, NON rimetterlo nella nuova versione. Stai rigenerando il documento da zero: deve riflettere l'ULTIMA volontà dell'utente.\n` : ""}
 
 === REGOLE DI DESIGN OBBLIGATORIE ===
 
 1. STRUTTURA HTML
    - Documento completo: <!DOCTYPE html><html lang="it"><head>...</head><body>...</body></html>
    - Charset UTF-8, viewport per A4
-   - ZERO dipendenze esterne eccetto Google Fonts via @import nel CSS
+   - TUTTO il CSS deve stare in UN SOLO blocco <style> dentro <head>. Mai CSS nel <body>.
+   - ZERO dipendenze esterne: NON usare @import, NON usare <link> a font o fogli di stile esterni.
+     ⚠️ VIETATO scrivere righe @import url(...): comparirebbero come testo nel PDF. Usa SOLO il font di sistema.
 
 2. TIPOGRAFIA
-   @import url('https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,300;0,400;0,600;0,700;0,800;1,400&display=swap');
-   - Font principale: Inter (Google Fonts)
+   - Font principale (font di sistema, nessun download): font-family: 'Segoe UI', 'Helvetica Neue', Helvetica, Arial, sans-serif;
    - Gerarchia: titolo principale 22pt bold, sezioni 13pt semibold, corpo 9.5pt regular
    - Interlinea: 1.5 per il corpo, 1.2 per le celle tabella
 
@@ -113,16 +132,20 @@ ${userRequest}
      Puppeteer caricherà l'immagine automaticamente durante la conversione in PDF.
 
 10. CASO "CARTA INTESTATA" (se l'utente chiede una carta intestata / letterhead / foglio intestato)
-   NON è una fattura: è un FOGLIO BRANDIZZATO ELEGANTE pronto per scriverci una lettera. Quindi:
+   NON è una fattura e NON è una lettera: è un FOGLIO BRANDIZZATO VUOTO, pronto perché l'utente ci scriva
+   sopra. La struttura è SOLO due elementi: intestazione in CIMA e piè di pagina in FONDO. In mezzo NIENTE.
    - HEADER raffinato in alto: logo a sinistra, a destra nome azienda (grande, colore primario),
      sotto in piccolo P.IVA, indirizzo completo, telefono, email, sito — ben allineati.
    - Una sottile linea/banda colorata (accento) sotto l'header come separatore.
-   - CORPO ampio e VUOTO (spazio bianco per scrivere): inserisci solo, in alto a destra, "Luogo, ${oggi}",
-     poi un breve fac-simile leggero tipo "Spett.le ______" e 2-3 righe segnaposto chiare in grigio chiaro
-     (es. "Oggetto: ____"), così si capisce che è un modello da compilare. NON inventare contenuti di vendita.
+   - CORPO: COMPLETAMENTE VUOTO. ⚠️ VIETATO inserire QUALSIASI cosa nel corpo della pagina:
+     NIENTE "Spett.le", NIENTE "Oggetto", NIENTE date, NIENTE "Luogo, data", NIENTE righe o testo
+     segnaposto, NIENTE testo fac-simile, NIENTE contenuti di esempio. Solo grande spazio bianco.
+   - Usa il layout per "spingere" il footer in fondo alla pagina A4 (es. body flex column, min-height
+     piena pagina, header in alto, un div centrale che cresce (flex:1) e resta vuoto, footer in basso).
    - FOOTER elegante in fondo alla pagina: banda/linea col colore primario con i dati azienda ripetuti
      in piccolo (azienda · P.IVA · indirizzo · tel · email · sito) centrati.
-   - Massima pulizia, molto spazio bianco, niente tabelle. Deve sembrare la carta intestata di uno studio professionale.
+   - Massima pulizia. Deve sembrare la carta intestata di uno studio professionale: solo testata e piede,
+     centro vuoto. Se l'utente chiede esplicitamente di togliere/cambiare elementi, RISPETTALO alla lettera.
 
 RITORNA SOLO IL CODICE HTML COMPLETO. Nessun blocco markdown \`\`\`html, zero testo prima o dopo.
 Il tuo output viene salvato direttamente come file .html e renderizzato in PDF.`;
@@ -133,7 +156,9 @@ Il tuo output viene salvato direttamente come file .html e renderizzato in PDF.`
   ];
 
   console.log("PDF Maker: Generazione template HTML professionale...");
-  const response = await coderModel.invoke(messages);
+  // Usa il modello del grado scelto dall'utente (più capace = layout migliore), fallback al coder base
+  const model = state.chatModel ? makeChatModel(state.chatModel, 0.3) : coderModel;
+  const response = await model.invoke(messages);
 
   let htmlCode = response.content as string;
 
@@ -145,6 +170,11 @@ Il tuo output viene salvato direttamente come file .html e renderizzato in PDF.`
     const mdMatch = htmlCode.match(/```(?:html)?\s*([\s\S]*?)```/i);
     if (mdMatch) htmlCode = mdMatch[1].trim();
   }
+
+  // SICUREZZA: rimuovi qualsiasi @import (a font/CSS esterni). A volte il modello lo lascia
+  // come testo visibile nel documento o spezzato su due righe → comparirebbe nel PDF.
+  // Usiamo font di sistema, quindi è sempre sicuro eliminarli.
+  htmlCode = htmlCode.replace(/@import[^;]*;/gi, "");
 
   // Sostituisce il placeholder con il logo reale (base64 o URL)
   // In questo modo il prompt LLM non viene ingolfato con dati enormi
@@ -213,11 +243,13 @@ Il tuo output viene salvato direttamente come file .html e renderizzato in PDF.`
     await browser.close();
     console.log(`PDF Maker: PDF generato con successo → ${pdfFileName}`);
 
-    const finalMsg =
-      `Fatto! Ecco il documento in PDF, pronto da scaricare 👇\n\n` +
-      `[File Generato: ${pdfFileName}]\n\n` +
-      `Se vuoi ritoccarlo c'è anche la versione modificabile in HTML: [File Generato: ${htmlFileName}]\n\n` +
-      `Dimmi pure se vuoi cambiare colori, logo, font o impaginazione e lo rifaccio al volo.`;
+    const apertura = isRevision
+      ? `Ho aggiornato il documento con le modifiche che mi hai chiesto 👇`
+      : `Ecco il documento in PDF, pronto da scaricare 👇`;
+    const chiusura = isRevision
+      ? `Va bene così? Se c'è ancora qualcosa da sistemare dimmelo e lo correggo.`
+      : `Se vuoi cambiare qualcosa (colori, logo, impaginazione) dimmelo e lo rifaccio.`;
+    const finalMsg = `${apertura}\n\n[File Generato: ${pdfFileName}]\n\n${chiusura}`;
 
     return {
       messages: [new SystemMessage(`PDF generato: ${pdfFileName} | HTML: ${htmlFileName}`)],
