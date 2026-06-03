@@ -119,10 +119,19 @@ ${convo ? `\n=== CONVERSAZIONE RECENTE (leggila per capire correzioni e richiest
    - Solo se l'utente scrive "+ IVA", "IVA esclusa", "netto" → il prezzo è imponibile e devi aggiungere IVA sopra
    - Nel documento specifica sempre chiaramente: "Prezzi IVA inclusa (22%)" o "Prezzi IVA esclusa"
 
-9. CONTENUTO
-   - Compila TUTTI i campi con dati realistici e coerenti basati sulla richiesta utente
-   - Per preventivi/fatture: righe prodotto con descrizione, quantità, prezzo unitario, riepilogo IVA, totale finale
-   - Per report: includi sezioni chiare, eventuali statistiche fittizie coerenti, raccomandazioni
+9. CONTENUTO — ⚠️ NON INVENTARE NULLA (regola fondamentale)
+   - Usa ESCLUSIVAMENTE i dati realmente forniti dall'utente (cliente, indirizzo, prodotto, quantità, prezzo).
+   - VIETATO inventare: nomi clienti, indirizzi, prezzi, P.IVA, codici, numeri di telefono, quantità,
+     date di consegna, sconti, statistiche o numeri di qualsiasi tipo non forniti dall'utente.
+   - Se un dato NON è stato fornito, lascia il campo vuoto, scrivi un trattino "—", oppure ometti la riga.
+     MAI riempire un campo "a caso" pur di completarlo.
+   - CARATTERISTICHE/SPECIFICHE DI UN PRODOTTO: includile SOLO se (a) le ha fornite l'utente, oppure
+     (b) sono informazioni di pubblico dominio di cui sei assolutamente certo. In caso di dubbio NON
+     inventare numeri tecnici (memoria, batteria, fotocamera, dimensioni, peso, ecc.): è molto meglio una
+     descrizione generale e CORRETTA che specifiche precise ma INVENTATE. Mai spacciare per certe specifiche
+     di cui non sei sicuro: un preventivo con dati falsi è un danno serio per chi lo manda a un cliente.
+   - Per preventivi/fatture: righe prodotto con descrizione, quantità, prezzo unitario, riepilogo IVA, totale finale — usando SOLO i dati dati.
+   - Per report: includi sezioni chiare e raccomandazioni, ma SENZA inventare statistiche o numeri.
    - Testo in italiano, valuta Euro (€), formato date italiano (GG/MM/AAAA)
    - Numero documento: usa formato anno+sequenza con anno corrente (es. PRV-${annoCorrente}-001)
    - VIETATO usare immagini in base64.
@@ -233,23 +242,40 @@ Il tuo output viene salvato direttamente come file .html e renderizzato in PDF.`
     await page.waitForNetworkIdle({ idleTime: 500, timeout: 15000 }).catch(() => {});
     await new Promise(r => setTimeout(r, 1000));
 
+    // Misura l'altezza reale del contenuto per CONOSCERE il numero di pagine (niente più "indovinare")
+    const A4_PX = 1123; // altezza A4 a 96dpi
+    const contentH: number = await page.evaluate(() => document.documentElement.scrollHeight).catch(() => A4_PX);
+    let pages = Math.max(1, Math.ceil(contentH / A4_PX));
+
+    // Se l'utente ha chiesto UNA pagina e ne servirebbero di più, riduci in scala per farcele stare
+    const wantsOnePage = /(?:una|1)\s*(?:sola\s*)?pagina|in\s*un[a']?\s*pagina|tutto\s+in\s+una|in\s+un\s+foglio|single\s*page|stare?\s+in\s+una/i.test(`${userRequest}\n${convo}`);
+    let pdfScale = 1;
+    if (wantsOnePage && pages > 1) {
+      pdfScale = Math.max(0.5, Math.min(1, (A4_PX - 6) / contentH));
+      pages = 1; // dopo la riduzione sta in una pagina
+    }
+
     await page.pdf({
       path: pdfFilePath,
       format: 'A4',
       printBackground: true,
+      scale: pdfScale,
       margin: { top: '0mm', right: '0mm', bottom: '0mm', left: '0mm' },
     });
 
     await browser.close();
-    console.log(`PDF Maker: PDF generato con successo → ${pdfFileName}`);
+    console.log(`PDF Maker: PDF generato (${pages} pag., scala ${pdfScale.toFixed(2)}) → ${pdfFileName}`);
 
+    const pagesTxt = pages === 1 ? "1 pagina" : `${pages} pagine`;
     const apertura = isRevision
       ? `Ho aggiornato il documento con le modifiche che mi hai chiesto 👇`
       : `Ecco il documento in PDF, pronto da scaricare 👇`;
     const chiusura = isRevision
       ? `Va bene così? Se c'è ancora qualcosa da sistemare dimmelo e lo correggo.`
       : `Se vuoi cambiare qualcosa (colori, logo, impaginazione) dimmelo e lo rifaccio.`;
-    const finalMsg = `${apertura}\n\n[File Generato: ${pdfFileName}]\n\n${chiusura}`;
+    // Il numero di pagine REALE finisce nel messaggio (e quindi nello storico): così se poi chiedi
+    // "quante pagine sono?" la risposta è basata sul dato vero, non inventata.
+    const finalMsg = `${apertura}\n\n[File Generato: ${pdfFileName}]\n\nIl documento è di ${pagesTxt}. ${chiusura}`;
 
     return {
       messages: [new SystemMessage(`PDF generato: ${pdfFileName} | HTML: ${htmlFileName}`)],
