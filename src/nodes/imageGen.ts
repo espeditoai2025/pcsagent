@@ -1,8 +1,9 @@
 import { AgentState } from "../state";
-import { SystemMessage, HumanMessage } from "@langchain/core/messages";
+import { SystemMessage, HumanMessage, AIMessage } from "@langchain/core/messages";
 import { PrismaClient } from "@prisma/client";
 import { chargeFlat } from "../services/tokenMeter";
 import { imageModelName } from "../services/aiLevels";
+import { makeChatModel } from "../services/llm";
 import * as fs from "fs/promises";
 import * as path from "path";
 import crypto from "crypto";
@@ -12,14 +13,50 @@ const IMAGE_CREDITS = 10_000; // costo fisso per ogni immagine generata
 
 export const imageGenNode = async (state: AgentState): Promise<Partial<AgentState>> => {
   const userId = state.userData?.id;
+  const u = state.userData || {};
 
-  // Usa la VERA richiesta dell'utente (ultimo messaggio umano), non la decisione del supervisor.
+  // Richiesta esplicita dell'utente (ultimo messaggio umano)
   const humanMsgs = state.messages.filter((m) => m instanceof HumanMessage);
-  const prompt = (humanMsgs.length
-    ? humanMsgs[humanMsgs.length - 1].content
-    : state.messages[state.messages.length - 1].content) as string;
+  const userRequest = (humanMsgs.length
+    ? (humanMsgs[humanMsgs.length - 1].content as string)
+    : (state.messages[state.messages.length - 1].content as string)) || "";
 
-  // Modello configurabile dall'admin (deve produrre immagini in output)
+  // Conversazione recente (testo; i base64 sono già rimossi a monte) per dare CONTESTO al prompt
+  const convo = state.messages
+    .filter((m) => m instanceof HumanMessage || m instanceof AIMessage)
+    .slice(-8)
+    .map((m) => `${m instanceof HumanMessage ? "UTENTE" : "AGENTE"}: ${String(m.content).slice(0, 500)}`)
+    .join("\n");
+
+  const ctx = [
+    u.companyName ? `Azienda: ${u.companyName}` : "",
+    u.website ? `Sito: ${u.website}` : "",
+    state.agentPrompt ? `Note agente: ${String(state.agentPrompt).slice(0, 300)}` : "",
+  ].filter(Boolean).join("\n");
+
+  // === Costruisci un PROMPT IMMAGINE dettagliato e PERTINENTE dal contesto ===
+  // (così "grafica" o "riprova" non vengono mandati letteralmente al modello immagini)
+  let imagePrompt = userRequest;
+  try {
+    const builderModelName = state.routerModel || state.chatModel; // modello solido ma economico
+    if (builderModelName) {
+      const builder = makeChatModel(builderModelName, 0.4);
+      const r = await builder.invoke([
+        new SystemMessage(
+          "Sei un prompt engineer per la generazione di immagini. In base alla CONVERSAZIONE, al PROGETTO/AZIENDA e alla richiesta, scrivi UN SOLO prompt — dettagliato ma conciso — per generare l'immagine che l'utente vuole DAVVERO, coerente col suo progetto. Specifica soggetto, stile, palette colori, composizione ed eventuale testo da inserire. Se la richiesta è vaga (es. 'grafica', 'un'immagine', 'riprova', 'fanne un'altra'), DEDUCI dal contesto cosa serve. Rispondi SOLO con il prompt dell'immagine, senza preamboli, virgolette o spiegazioni."
+        ),
+        new HumanMessage(
+          `PROGETTO/AZIENDA:\n${ctx || "(non specificato)"}\n\nCONVERSAZIONE:\n${convo || "(vuota)"}\n\nRICHIESTA ATTUALE DELL'UTENTE: ${userRequest}`
+        ),
+      ]);
+      const built = ((r.content as string) || "").trim();
+      if (built && built.length > 3) imagePrompt = built;
+    }
+  } catch (e: any) {
+    console.error("ImageGen prompt-builder error:", e?.message);
+    // si prosegue con la richiesta grezza dell'utente
+  }
+
   const model = await imageModelName(prisma);
 
   try {
@@ -32,7 +69,7 @@ export const imageGenNode = async (state: AgentState): Promise<Partial<AgentStat
       },
       body: JSON.stringify({
         model,
-        messages: [{ role: "user", content: prompt }],
+        messages: [{ role: "user", content: imagePrompt }],
       }),
     });
 
@@ -55,9 +92,8 @@ export const imageGenNode = async (state: AgentState): Promise<Partial<AgentStat
       await chargeFlat(prisma, userId, IMAGE_CREDITS * images.length, model, "image").catch(() => {});
 
       const first = images[0];
-      // ⚠️ IMPORTANTISSIMO: NON restituire il base64 come testo. Verrebbe salvato nella cronologia
-      // chat e ri-spedito al modello ai messaggi successivi (centinaia di migliaia di token → costo
-      // reale enorme). Le immagini data: vengono salvate su FILE e referenziate con [File Generato].
+      // ⚠️ NON restituire il base64 come testo: verrebbe salvato in cronologia e ri-spedito al
+      // modello (centinaia di migliaia di token). Le immagini data: si salvano su FILE.
       const m = first.match(/^data:([^;]+);base64,(.*)$/s);
       if (m) {
         const ext = ((m[1].split("/")[1] || "png").replace(/[^a-z0-9]/gi, "") || "png").slice(0, 5);
@@ -69,11 +105,10 @@ export const imageGenNode = async (state: AgentState): Promise<Partial<AgentStat
         await fs.writeFile(path.join(dir, name), Buffer.from(m[2], "base64"));
         return {
           messages: [new SystemMessage(`Immagine generata: ${name}`)],
-          finalResult: `Ecco l'immagine che ho generato 👇\n\n[File Generato: ${name}]\n\nDimmi pure se vuoi modificarla o generarne un'altra.`,
+          finalResult: `Ecco l'immagine che ho generato 👇\n\n[File Generato: ${name}]\n\nDimmi pure se vuoi modificarla (colori, testo, stile) o generarne un'altra.`,
         };
       }
 
-      // URL http(s) remoto: è corto, si può includere direttamente.
       return {
         messages: [new SystemMessage("Immagine generata (URL).")],
         finalResult: `Ecco l'immagine che ho generato 👇\n\n${first}`,
@@ -85,7 +120,7 @@ export const imageGenNode = async (state: AgentState): Promise<Partial<AgentStat
       messages: [new SystemMessage("Generazione immagine: nessuna immagine restituita.")],
       finalResult: textBack
         ? `Non sono riuscito a generare l'immagine. Il modello ha risposto:\n${textBack.slice(0, 500)}`
-        : "Non sono riuscito a generare l'immagine in questo momento. Riprova, magari descrivendola in modo più specifico.",
+        : "Non sono riuscito a generare l'immagine. Prova a descrivere cosa vuoi (soggetto, stile, colori, testo).",
     };
   } catch (e: any) {
     console.error("ImageGen error:", e?.message);
