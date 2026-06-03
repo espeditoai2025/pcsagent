@@ -32,11 +32,13 @@ ${companyBlock}
 
 === AMBIENTE ===
 Container Docker pcsai-python con queste librerie GIÀ INSTALLATE (NO pip install necessario):
-  Dati:       pandas, numpy, scipy, scikit-learn, openpyxl, sqlalchemy, psycopg2-binary
+  Dati/Excel: pandas, numpy, scipy, scikit-learn, openpyxl, xlsxwriter (Excel avanzati: formattazione condizionale, grafici, più fogli), sqlalchemy, psycopg2-binary
   Web:        requests, beautifulsoup4, lxml, html5lib, playwright (con Chromium)
   Grafici:    matplotlib, seaborn, pillow
-  PDF:        weasyprint, xhtml2pdf, reportlab, pypdf
+  PDF:        weasyprint, xhtml2pdf, reportlab, pypdf, fpdf2 (import: "from fpdf import FPDF" — PDF/manuali/guide multipagina), pymupdf (import: "import fitz" — manipolazione avanzata: unione/divisione/watermark/estrazione/rendering pagine), pdfplumber (estrazione testo e tabelle da PDF)
+  Codici:     qrcode (QR code), python-barcode (import: "import barcode" — codici a barre EAN13/Code128/ecc.)
   Altro:      pyyaml, cryptography
+Per manuali/guide/cataloghi PDF multipagina usa weasyprint o Playwright (HTML+CSS, impaginazione automatica con @page e page-break) oppure fpdf2; per modificare/unire PDF esistenti usa pymupdf (fitz).
 
 Per librerie NON in lista, installa silenziosamente prima dell'import:
   import subprocess, sys; subprocess.check_call([sys.executable,"-m","pip","install","-q","NOME"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
