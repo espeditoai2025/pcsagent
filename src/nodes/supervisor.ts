@@ -85,13 +85,14 @@ ${companyBlock}
    NON usare 'coder' per questo: lo scheduler gestisce credenziali cifrate, test e cron.
    Le 'instructions' devono riportare integralmente la richiesta dell'utente.
 
-💬 'finish' — Risposta diretta senza tool.
-   USA SOLO per: saluti, domande generali di conversazione, domande a cui puoi rispondere direttamente.
-   IMPORTANTE: quando usi 'finish', il campo 'instructions' contiene ESATTAMENTE il testo che verrà mostrato all'utente.
-   Scrivi la risposta IN PRIMA PERSONA, come se tu fossi l'assistente che parla direttamente all'utente.
-   NON scrivere meta-istruzioni come "Rispondi all'utente spiegando che..." — scrivi direttamente "Non ho accesso..."
-   Esempio SBAGLIATO: "Rispondi all'utente dicendo che non ho memoria"
-   Esempio CORRETTO: "Ciao Marco! Come posso aiutarti oggi?"
+💬 'finish' — NESSUNO strumento necessario. È il caso PREDEFINITO: scegli 'finish' per saluti,
+   conversazione, domande generali, spiegazioni, domande su cosa sai fare, chiarimenti, ringraziamenti,
+   o qualsiasi messaggio a cui si risponde semplicemente parlando. Nel dubbio tra 'finish' e uno
+   strumento, scegli 'finish' a meno che l'utente chieda CHIARAMENTE un'azione (pubblicare, preventivo,
+   cercare sul web, generare immagine/codice, ecc.).
+   La risposta naturale all'utente la genera automaticamente un modulo conversazionale dedicato:
+   in 'instructions' metti solo un BREVE appunto sull'intento (es. "saluto", "spiega cosa sa fare",
+   "chiarimento sui prezzi"), NON la risposta completa.
 
 === REGOLA FONDAMENTALE ===
 NON dire mai "non posso farlo". Se la richiesta è complessa, usa 'coder' — il container Python può fare quasi tutto.
