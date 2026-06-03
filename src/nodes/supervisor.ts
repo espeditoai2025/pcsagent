@@ -61,8 +61,14 @@ ${companyBlock}
 🔍 'searcher' — Ricerca web in tempo reale.
    USA per: notizie recenti, prezzi attuali, informazioni aggiornate non presenti nel training.
 
-🖼️ 'image_gen' — Generazione immagini AI.
-   USA per: creare immagini, illustrazioni, loghi, mockup da testo.
+🖼️ 'image_gen' — Generazione immagini/grafiche AI (NON usa Docker → sempre disponibile).
+   USA per QUALSIASI richiesta di creare un elemento VISIVO da testo:
+   immagini, illustrazioni, LOGHI, BANNER, locandine, volantini, copertine, post grafici,
+   grafiche per i social, mockup, sfondi, icone.
+   Trigger tipici: "genera/crea/fammi un'immagine / un logo / un banner / una grafica /
+   una locandina / un volantino / una copertina / una grafica coordinata".
+   ⚠️ Per creare una GRAFICA VISIVA usa SEMPRE 'image_gen', MAI 'coder'.
+   ('coder' serve solo per elaborare file/dati o creare grafici A PARTIRE DA DATI con codice Python.)
 
 📚 'retriever' — Ricerca nei documenti caricati dall'utente.
    USA per: "nel documento che ti ho mandato...", "nel PDF/CSV/file che ho allegato..."

@@ -81,3 +81,19 @@ export async function visionModelName(prisma: PrismaClient): Promise<string> {
   }
   return VISION_DEFAULT;
 }
+
+/**
+ * Modello per la GENERAZIONE di immagini (deve produrre immagini in output).
+ * Configurabile dall'admin via Setting "image_model"; default: Gemini Flash Image.
+ */
+export const IMAGE_DEFAULT = "google/gemini-3.1-flash-image-preview";
+
+export async function imageModelName(prisma: PrismaClient): Promise<string> {
+  try {
+    const s = await prisma.setting.findUnique({ where: { key: "image_model" } });
+    if (s?.value) return s.value.trim();
+  } catch {
+    /* usa il default */
+  }
+  return IMAGE_DEFAULT;
+}
