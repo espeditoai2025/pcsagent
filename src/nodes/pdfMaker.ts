@@ -112,6 +112,18 @@ ${userRequest}
      https://images.unsplash.com per foto generiche). Usa <img src="URL" style="max-width:260px; max-height:180px; object-fit:contain; display:block; margin:0 auto;">
      Puppeteer caricherà l'immagine automaticamente durante la conversione in PDF.
 
+10. CASO "CARTA INTESTATA" (se l'utente chiede una carta intestata / letterhead / foglio intestato)
+   NON è una fattura: è un FOGLIO BRANDIZZATO ELEGANTE pronto per scriverci una lettera. Quindi:
+   - HEADER raffinato in alto: logo a sinistra, a destra nome azienda (grande, colore primario),
+     sotto in piccolo P.IVA, indirizzo completo, telefono, email, sito — ben allineati.
+   - Una sottile linea/banda colorata (accento) sotto l'header come separatore.
+   - CORPO ampio e VUOTO (spazio bianco per scrivere): inserisci solo, in alto a destra, "Luogo, ${oggi}",
+     poi un breve fac-simile leggero tipo "Spett.le ______" e 2-3 righe segnaposto chiare in grigio chiaro
+     (es. "Oggetto: ____"), così si capisce che è un modello da compilare. NON inventare contenuti di vendita.
+   - FOOTER elegante in fondo alla pagina: banda/linea col colore primario con i dati azienda ripetuti
+     in piccolo (azienda · P.IVA · indirizzo · tel · email · sito) centrati.
+   - Massima pulizia, molto spazio bianco, niente tabelle. Deve sembrare la carta intestata di uno studio professionale.
+
 RITORNA SOLO IL CODICE HTML COMPLETO. Nessun blocco markdown \`\`\`html, zero testo prima o dopo.
 Il tuo output viene salvato direttamente come file .html e renderizzato in PDF.`;
 
@@ -138,7 +150,12 @@ Il tuo output viene salvato direttamente come file .html e renderizzato in PDF.`
   // In questo modo il prompt LLM non viene ingolfato con dati enormi
   htmlCode = htmlCode.replace(new RegExp(LOGO_PLACEHOLDER, 'g'), logoHtml);
 
-  const sharedDataDir = path.resolve(process.cwd(), "shared_data");
+  // IMPORTANTE: salva nella cartella ISOLATA dell'utente (shared_data/<userId>),
+  // la stessa da cui /api/files serve i download. Altrimenti il file non è scaricabile.
+  const userId = (u as any).id;
+  const sharedDataDir = userId
+    ? path.resolve(process.cwd(), "shared_data", String(userId))
+    : path.resolve(process.cwd(), "shared_data");
   await fs.mkdir(sharedDataDir, { recursive: true }).catch(() => {});
 
   const uniqueId = crypto.randomBytes(4).toString("hex");
@@ -147,7 +164,8 @@ Il tuo output viene salvato direttamente come file .html e renderizzato in PDF.`
   // Rileva il tipo di documento per il nome file
   const req = userRequest.toLowerCase();
   let docType = "documento";
-  if (req.includes("preventiv")) docType = "preventivo";
+  if (req.includes("intestata") || req.includes("letterhead")) docType = "carta-intestata";
+  else if (req.includes("preventiv")) docType = "preventivo";
   else if (req.includes("fattur")) docType = "fattura";
   else if (req.includes("report") || req.includes("analisi")) docType = "report";
   else if (req.includes("proposta") || req.includes("offerta")) docType = "offerta";
@@ -196,10 +214,10 @@ Il tuo output viene salvato direttamente come file .html e renderizzato in PDF.`
     console.log(`PDF Maker: PDF generato con successo → ${pdfFileName}`);
 
     const finalMsg =
-      `Ho generato il tuo documento professionale in formato PDF.\n\n` +
-      `Puoi scaricarlo qui sotto:\n\n` +
+      `Fatto! Ecco il documento in PDF, pronto da scaricare 👇\n\n` +
       `[File Generato: ${pdfFileName}]\n\n` +
-      `È disponibile anche il template HTML modificabile:\n[File Generato: ${htmlFileName}]`;
+      `Se vuoi ritoccarlo c'è anche la versione modificabile in HTML: [File Generato: ${htmlFileName}]\n\n` +
+      `Dimmi pure se vuoi cambiare colori, logo, font o impaginazione e lo rifaccio al volo.`;
 
     return {
       messages: [new SystemMessage(`PDF generato: ${pdfFileName} | HTML: ${htmlFileName}`)],
