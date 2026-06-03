@@ -6,7 +6,6 @@ import { AsyncLocalStorage } from "async_hooks";
 import { BaseCallbackHandler } from "@langchain/core/callbacks/base";
 import { PrismaClient } from "@prisma/client";
 import { getPriceMap, FALLBACK_BASE_OUT } from "./pricing";
-import { getLevelModels } from "./aiLevels";
 
 /**
  * Conteggio token PER-AGENTE pesato per modello.
@@ -90,15 +89,12 @@ export async function chargeUser(
 ): Promise<number> {
   if (!userId || entries.length === 0) return 0;
 
-  // Peso = COSTO REALE: prezzo output del modello / prezzo output del modello base (livello 1).
+  // Peso = COSTO REALE relativo a un RIFERIMENTO FISSO ($1.5/M output).
+  // NB: NON normalizzare sul "modello base" corrente: se il base è economico (es. DeepSeek
+  // a $0.20/M) i modelli costosi verrebbero gonfiati (Opus 125x invece di ~17x) e il saldo
+  // crollerebbe. Con riferimento fisso la scala dei crediti resta stabile e coerente coi prezzi.
   const priceMap = await getPriceMap();
-  let baseOut = FALLBACK_BASE_OUT;
-  try {
-    const baseModel = (await getLevelModels(prisma))[1];
-    baseOut = priceMap[baseModel]?.outP || FALLBACK_BASE_OUT;
-  } catch {
-    /* fallback */
-  }
+  const baseOut = FALLBACK_BASE_OUT;
   const weightOf = (model: string) => (priceMap[model]?.outP || baseOut) / baseOut;
 
   const byModel: Record<string, { prompt: number; completion: number; credits: number }> = {};

@@ -263,10 +263,17 @@ app.post("/api/chat", async (c) => {
         where: { id: userId }
       });
 
-      // 3. Costruisci i messaggi per LangGraph
+      // 3. Costruisci i messaggi per LangGraph.
+      // ⚠️ Rimuovi i data-URL base64 (es. immagini generate salvate in vecchie sessioni): re-inviarli
+      // al modello costerebbe centinaia di migliaia di token. Sostituiti con un segnaposto corto.
+      const stripDataUrls = (s: unknown): string => {
+        const str = typeof s === "string" ? s : String(s ?? "");
+        return str.replace(/data:[\w.+-]+\/[\w.+-]+;base64,[A-Za-z0-9+/=\s]{200,}/g, "[immagine]");
+      };
       const agentMessages = history.map((msg) => {
-        if (msg.role === 'user') return new HumanMessage(msg.content);
-        return new (require("@langchain/core/messages").AIMessage)(msg.content);
+        const content = stripDataUrls(msg.content);
+        if (msg.role === 'user') return new HumanMessage(content);
+        return new (require("@langchain/core/messages").AIMessage)(content);
       });
 
       // Risolvi il modello dal grado di intelligenza scelto dall'utente
