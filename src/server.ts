@@ -13,7 +13,7 @@ import { processAndStoreDocument } from "./utils/embeddings";
 import { extractAndUpdateMemory } from "./services/memoryService";
 import { startScheduler, previewJob } from "./services/scheduler";
 import { usageStore, chargeUser } from "./services/tokenMeter";
-import { modelForLevel } from "./services/aiLevels";
+import { modelForLevel, routerModelName } from "./services/aiLevels";
 import dotenv from "dotenv";
 dotenv.config();
 
@@ -270,12 +270,15 @@ app.post("/api/chat", async (c) => {
 
       // Risolvi il modello dal grado di intelligenza scelto dall'utente
       const chatModel = await modelForLevel(prisma, (userProfile as any)?.aiLevel);
+      // L'orchestratore (Supervisor) usa SEMPRE un modello solido, a prescindere dal grado
+      const routerModel = await routerModelName(prisma);
 
       const initialState = {
         messages: agentMessages,
         userData: userProfile,
         agentPrompt: agent?.systemPrompt || null,
         chatModel,
+        routerModel,
       };
 
       let lastState: any = null;

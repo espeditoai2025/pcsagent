@@ -43,6 +43,12 @@ export const AgentStateAnnotation = Annotation.Root({
     reducer: (left, right) => right ?? left,
     default: () => null,
   }),
+  // Modello dell'ORCHESTRATORE (Supervisor): fissato a un modello solido, indipendente
+  // dal grado scelto per generare → routing affidabile anche quando l'utente è su "Base".
+  routerModel: Annotation<string | null>({
+    reducer: (left, right) => right ?? left,
+    default: () => null,
+  }),
 });
 
 export type AgentState = typeof AgentStateAnnotation.State;

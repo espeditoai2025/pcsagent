@@ -108,8 +108,10 @@ Rispondi SOLO in JSON valido:
     ...state.messages,
   ];
 
-  // Usa il modello del grado di intelligenza scelto dall'utente (fallback al router base)
-  const model = state.chatModel ? makeChatModel(state.chatModel, 0) : routerModel;
+  // L'ORCHESTRATORE usa SEMPRE un modello solido (state.routerModel), indipendente dal grado
+  // scelto per generare: smistare bene è critico e costa pochissimo. Fallback: grado utente → router base.
+  const orchestratorModel = state.routerModel || state.chatModel;
+  const model = orchestratorModel ? makeChatModel(orchestratorModel, 0) : routerModel;
   const response = await model.withStructuredOutput(routerSchema).invoke(messages);
 
   return {

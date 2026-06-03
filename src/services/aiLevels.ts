@@ -39,3 +39,27 @@ export async function modelForLevel(prisma: PrismaClient, level: number | null |
   const lvl = level && m[level] ? level : 1;
   return m[lvl] || DEFAULT_LEVEL_MODELS[1];
 }
+
+/**
+ * Modello dell'ORCHESTRATORE (Supervisor): scelto SEMPRE solido, a prescindere dal grado
+ * che l'utente sceglie per generare. Smistare bene è critico (se sbaglia il nodo, sbaglia tutto)
+ * ma costa pochissimo (output minuscolo). Override admin via Setting "router_model";
+ * altrimenti usa il modello del livello "Avanzato" (configurabile in "ai_models").
+ */
+export const ORCHESTRATOR_DEFAULT = "openai/gpt-5.4-mini";
+
+export async function routerModelName(prisma: PrismaClient): Promise<string> {
+  try {
+    const s = await prisma.setting.findUnique({ where: { key: "router_model" } });
+    if (s?.value) return s.value.trim();
+  } catch {
+    /* usa il fallback */
+  }
+  try {
+    const models = await getLevelModels(prisma);
+    if (models[2]) return models[2]; // livello "Avanzato"
+  } catch {
+    /* usa il default */
+  }
+  return ORCHESTRATOR_DEFAULT;
+}
