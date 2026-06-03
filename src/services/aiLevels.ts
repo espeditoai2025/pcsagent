@@ -63,3 +63,21 @@ export async function routerModelName(prisma: PrismaClient): Promise<string> {
   }
   return ORCHESTRATOR_DEFAULT;
 }
+
+/**
+ * Modello "occhi" per LEGGERE le immagini allegate (deve essere multimodale).
+ * Quando l'utente allega un'immagine, questo modello la converte in testo per il resto
+ * dell'agente (così i modelli solo-testo, es. DeepSeek, continuano a funzionare).
+ * Configurabile dall'admin via Setting "vision_model"; default: Gemini flash-lite (economico).
+ */
+export const VISION_DEFAULT = "google/gemini-3.1-flash-lite";
+
+export async function visionModelName(prisma: PrismaClient): Promise<string> {
+  try {
+    const s = await prisma.setting.findUnique({ where: { key: "vision_model" } });
+    if (s?.value) return s.value.trim();
+  } catch {
+    /* usa il default */
+  }
+  return VISION_DEFAULT;
+}

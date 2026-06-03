@@ -1,7 +1,7 @@
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { agentGraph } from "./graph";
-import { HumanMessage } from "@langchain/core/messages";
+import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 import { ChatOpenAI } from "@langchain/openai";
 
 import { streamSSE } from "hono/streaming";
@@ -13,7 +13,8 @@ import { processAndStoreDocument } from "./utils/embeddings";
 import { extractAndUpdateMemory } from "./services/memoryService";
 import { startScheduler, previewJob } from "./services/scheduler";
 import { usageStore, chargeUser } from "./services/tokenMeter";
-import { modelForLevel, routerModelName } from "./services/aiLevels";
+import { modelForLevel, routerModelName, visionModelName } from "./services/aiLevels";
+import { makeChatModel } from "./services/llm";
 import dotenv from "dotenv";
 dotenv.config();
 
@@ -286,6 +287,31 @@ app.post("/api/chat", async (c) => {
 
       // Esegui il grafo dentro il contatore token (cattura i consumi LLM di questo run)
       await usageStore.run(usageAcc, async () => {
+        // Se l'allegato è un'IMMAGINE, un modello multimodale fa da "occhi": la legge e la converte
+        // in testo, così anche i modelli solo-testo (es. DeepSeek) ne possono usare il contenuto.
+        if (attachment && attachment.type?.startsWith('image/')) {
+          try {
+            const imgPath = path.join(userDir(userId), attachment.filename);
+            if (fs.existsSync(imgPath)) {
+              const dataUrl = `data:${attachment.type};base64,${fs.readFileSync(imgPath).toString('base64')}`;
+              const vm = makeChatModel(await visionModelName(prisma), 0.2);
+              const vres = await vm.invoke([
+                new SystemMessage("Sei gli occhi di un assistente AI. Descrivi in italiano, in modo accurato e utile, il contenuto dell'immagine allegata: TRASCRIVI esattamente eventuale testo presente, riporta numeri, importi, date, tabelle, oggetti e contesto. Completo ma conciso. Se l'utente ha fatto una domanda, tieni conto di cosa gli serve."),
+                new HumanMessage({ content: [
+                  { type: "text", text: (message as string) || "Descrivi questa immagine." },
+                  { type: "image_url", image_url: { url: dataUrl } },
+                ] } as any),
+              ]);
+              const desc = ((vres.content as string) || "").trim();
+              const li = agentMessages.length - 1;
+              if (desc && li >= 0 && agentMessages[li] instanceof HumanMessage) {
+                const orig = agentMessages[li].content as string;
+                agentMessages[li] = new HumanMessage(`${orig}\n\n[Immagine allegata "${attachment.filename}" — contenuto letto automaticamente:]\n${desc}`);
+              }
+            }
+          } catch (e) { console.error("Vision read error:", (e as any)?.message); }
+        }
+
         for await (const chunk of await agentGraph.stream(initialState)) {
           const nodeName = Object.keys(chunk)[0];
           lastState = (chunk as Record<string, any>)[nodeName];
