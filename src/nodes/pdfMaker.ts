@@ -5,6 +5,9 @@ import puppeteer from "puppeteer";
 import * as path from "path";
 import * as fs from "fs/promises";
 import crypto from "crypto";
+import { PrismaClient } from "@prisma/client";
+
+const prisma = new PrismaClient();
 
 export const pdfMakerNode = async (state: AgentState): Promise<Partial<AgentState>> => {
   const u = state.userData || {};
@@ -55,7 +58,74 @@ ANNO: ${annoCorrente}`.trim();
     (m) => typeof m.content === "string" && (m.content as string).startsWith("PDF generato:")
   );
 
-  const htmlPrompt = `Sei un designer UI/UX esperto in documenti aziendali. Genera un documento HTML/CSS completo, impaginato in formato A4, con grafica PROFESSIONALE e MODERNA.
+  // === CARTA INTESTATA SALVATA (riusabile) ===
+  const uid = (u as any).id;
+  const userDir = uid
+    ? path.resolve(process.cwd(), "shared_data", String(uid))
+    : path.resolve(process.cwd(), "shared_data");
+  const savedLetterhead: string | undefined = (u as any).letterheadHtml || undefined;
+
+  // L'utente vuole SALVARE la carta intestata appena vista come modello ufficiale?
+  const wantsSave =
+    /\b(salva(la|lo)?|memorizza|conserva|imposta come (modello|predefinit|ufficiale)|usa (sempre|d'ora in poi))\b/i.test(userRequest) &&
+    /(carta intestata|intestazione|modello|template|quest|quell|cos[ìi]|sempre)/i.test(userRequest);
+
+  if (wantsSave) {
+    // Trova l'HTML dell'ULTIMO documento generato (di norma la carta intestata appena fatta)
+    let srcName: string | null = null;
+    for (let i = state.messages.length - 1; i >= 0; i--) {
+      const c = state.messages[i].content;
+      if (typeof c === "string") {
+        const m = c.match(/HTML:\s*([^\s|]+\.html)/);
+        if (m) { srcName = m[1]; break; }
+      }
+    }
+    let htmlToSave: string | null = null;
+    try {
+      if (srcName) {
+        htmlToSave = await fs.readFile(path.join(userDir, srcName), "utf8");
+      } else {
+        // fallback: il file .html più recente nella cartella utente (preferendo le carte intestate)
+        const files = await fs.readdir(userDir).catch(() => [] as string[]);
+        const htmls = files.filter((f) => f.endsWith(".html"));
+        if (htmls.length) {
+          const stats = await Promise.all(
+            htmls.map(async (f) => ({ f, t: (await fs.stat(path.join(userDir, f))).mtimeMs }))
+          );
+          stats.sort((a, b) => {
+            const ai = a.f.includes("carta-intestata") ? 1 : 0;
+            const bi = b.f.includes("carta-intestata") ? 1 : 0;
+            if (ai !== bi) return bi - ai;
+            return b.t - a.t;
+          });
+          htmlToSave = await fs.readFile(path.join(userDir, stats[0].f), "utf8");
+        }
+      }
+    } catch { /* ignore */ }
+
+    if (htmlToSave && uid) {
+      await prisma.user
+        .update({ where: { id: String(uid) }, data: { letterheadHtml: htmlToSave, letterheadSavedAt: new Date() } })
+        .catch((e) => console.error("save letterhead", e));
+      return {
+        messages: [new SystemMessage("Carta intestata salvata come modello ufficiale")],
+        finalResult:
+          "Fatto! ✅ Ho salvato questa carta intestata come la tua **ufficiale**. Da ora la userò automaticamente per tutti i documenti (preventivi, fatture, lettere…): stesso logo, colori e impaginazione — cambierò solo il contenuto.\n\nQuando vorrai cambiarla, generane una nuova e dimmi di nuovo «salvala». Se per un documento vuoi un'altra grafica, basta dirmi «con un design diverso».",
+      };
+    }
+    return {
+      messages: [new SystemMessage("Nessuna carta intestata da salvare")],
+      finalResult:
+        "Per salvarla devo prima averne generata una. Dimmi «fammi una carta intestata»; quando quella che vedi ti piace scrivi «salvala» e la imposto come modello ufficiale per tutti i tuoi documenti.",
+    };
+  }
+
+  // Se l'utente ha una carta intestata salvata, RIUSALA — a meno che chieda esplicitamente un design nuovo/diverso
+  const wantsFreshDesign =
+    /\b(nuova|nuovo|divers|altr[ao]|da zero|cambia (stile|grafica|design|colori|logo)|ridisegn|rifai (la grafica|il design|lo stile))\b/i.test(userRequest);
+  const useSaved = !!savedLetterhead && !wantsFreshDesign;
+
+  const scratchPrompt = `Sei un designer UI/UX esperto in documenti aziendali. Genera un documento HTML/CSS completo, impaginato in formato A4, con grafica PROFESSIONALE e MODERNA.
 
 === DATI AZIENDALI DA INTEGRARE ===
 ${companyInfo}
@@ -161,6 +231,29 @@ ${convo ? `\n=== CONVERSAZIONE (leggila TUTTA: contiene i dati del documento e l
 
 RITORNA SOLO IL CODICE HTML COMPLETO. Nessun blocco markdown \`\`\`html, zero testo prima o dopo.
 Il tuo output viene salvato direttamente come file .html e renderizzato in PDF.`;
+
+  // Prompt di RIUSO: l'utente ha già la sua carta intestata ufficiale → mantienila identica, cambia solo il corpo
+  const reusePrompt = `Sei un assistente che impagina documenti aziendali. L'utente ha GIÀ la sua carta intestata UFFICIALE (logo, intestazione, piè di pagina, colori, font): devi RIUSARLA esattamente, cambiando SOLO il contenuto del corpo.
+
+=== CARTA INTESTATA UFFICIALE (riusa header e footer IDENTICI) ===
+${savedLetterhead}
+
+=== COSA METTERE NEL CORPO (l'area centrale tra header e footer) ===
+${userRequest}
+${convo ? `\n=== CONVERSAZIONE (dati reali del documento) ===\n${convo}\n` : ""}
+
+=== REGOLE ===
+- Parti dall'HTML della carta intestata qui sopra. Mantieni IDENTICI logo, intestazione, piè di pagina, colori, font e struttura. NON ridisegnare e NON cambiare i dati aziendali in header/footer.
+- Riempi il CORPO con il contenuto richiesto (es. tabella prodotti di un preventivo/fattura, testo di una lettera), nello stesso stile e colori della carta intestata.
+- ⚠️ NON INVENTARE NULLA: usa SOLO i dati realmente forniti (cliente, indirizzo, prodotti, quantità, prezzi). Se un dato manca, lascia vuoto o ometti la riga. Niente clienti, prezzi, P.IVA, specifiche o prodotti di fantasia.
+- Specifiche di un prodotto: includile solo se fornite dall'utente o se ne sei assolutamente certo; in dubbio NON inventare numeri tecnici.
+- IVA: se un prezzo è indicato senza specificare → è IVA inclusa (22%): imponibile = prezzo/1,22, IVA = prezzo − imponibile. Solo se l'utente scrive "+IVA"/"IVA esclusa"/"netto" → aggiungi l'IVA sopra. Indica sempre "IVA inclusa/esclusa".
+- Se serve far stare tutto in una pagina, compatta margini e spaziature (NON rimpicciolire il logo).
+- VIETATO @import e font esterni: usa i font già presenti nella carta intestata.
+
+RITORNA SOLO L'HTML COMPLETO (<!DOCTYPE html>…</html>). Nessun markdown, nessun testo prima o dopo.`;
+
+  const htmlPrompt = useSaved ? reusePrompt : scratchPrompt;
 
   const messages = [
     new SystemMessage(htmlPrompt),

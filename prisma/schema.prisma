@@ -32,6 +32,8 @@ model User {
   companyLogoUrl String?
   website        String?
   agentMemory    String?
+  letterheadHtml String?         // carta intestata "ufficiale" salvata dall'utente (HTML riusabile per tutti i documenti)
+  letterheadSavedAt DateTime?    // quando è stata salvata l'ultima volta
   emailSmtpHost  String?
   emailSmtpPort  Int?
   emailSmtpUser  String?

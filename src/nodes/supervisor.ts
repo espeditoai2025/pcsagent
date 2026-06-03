@@ -50,6 +50,8 @@ ${companyBlock}
 
 📄 'pdf_maker' — Generatore documenti aziendali con carta intestata. USA per:
    - Preventivi, fatture, offerte, contratti, report — anche con prodotti specifici e prezzi già forniti
+   - Carta intestata: crearla, modificarla, SALVARLA come modello ("salvala", "usa sempre questa
+     carta intestata", "imposta come predefinita") o riusarla per i documenti
    - Qualsiasi documento dove i dati sono già presenti nel messaggio dell'utente
    - Documenti con FOTO DEL PRODOTTO: usa tag <img src="URL"> con URL pubblici del produttore
      (es. lenovo.com, hp.com, Dell.com, Amazon, ecc.) — Puppeteer li carica automaticamente.
