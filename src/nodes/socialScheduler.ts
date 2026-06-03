@@ -17,8 +17,8 @@ const prisma = new PrismaClient();
 
 const jobSchema = z.object({
   intent: z
-    .enum(["TEST_NOW", "SCHEDULE", "NEED_INFO", "LIST_INFO", "LIST_JOBS", "EXPORT_POSTS"])
-    .describe("TEST_NOW = pubblica subito; SCHEDULE = programma ricorrenti; LIST_INFO = elenca pagine/permessi del token; LIST_JOBS = elenca le pubblicazioni PROGRAMMATE/cron e il loro stato, o spiega perché non è stato pubblicato; EXPORT_POSTS = salva gli ultimi N post di una pagina in un CSV; NEED_INFO = mancano dati"),
+    .enum(["TEST_NOW", "SCHEDULE", "NEED_INFO", "LIST_INFO", "LIST_JOBS", "EXPORT_POSTS", "DIAGNOSE"])
+    .describe("TEST_NOW = pubblica subito; SCHEDULE = programma ricorrenti; LIST_INFO = elenca pagine/permessi del token; LIST_JOBS = elenca le pubblicazioni PROGRAMMATE/cron e il loro stato; EXPORT_POSTS = salva gli ultimi N post di una pagina in un CSV; DIAGNOSE = controlla cosa non va (token, permessi, pubblicazioni fallite, file mancanti) e spiega i problemi; NEED_INFO = mancano dati"),
   count: z.number().describe("Per EXPORT_POSTS: quanti post salvare (es. 'ultimi 10 post' = 10; default 10)"),
   missingInfo: z.string().describe("Se intent=NEED_INFO, messaggio IN PRIMA PERSONA che chiede cosa manca"),
   targetPageName: z.string().describe("Nome della pagina Facebook su cui pubblicare, se indicato dall'utente; altrimenti stringa vuota"),
@@ -32,6 +32,18 @@ const jobSchema = z.object({
 });
 
 const pageList = (pages: { name: string }[]) => pages.map((p) => `• ${p.name}`).join("\n");
+
+// Traduce gli errori tecnici delle esecuzioni in spiegazioni comprensibili (diagnostica).
+function friendlyError(err: string | null | undefined): string {
+  const e = (err || "").toLowerCase();
+  if (!e) return "errore sconosciuto";
+  if (e.includes("pcsai-python") || e.includes("no such image") || e.includes("docker")) return "l'ambiente di esecuzione del server non era disponibile (problema tecnico lato server, da sistemare dall'amministratore)";
+  if (e.includes("no such file") || e.includes("file not found") || e.includes("nessuna riga") || e.includes("caricamento fonte")) return "il file dei dati non è stato trovato: ricaricalo dal pannello";
+  if (e.includes("pages_manage_posts") || e.includes("permission")) return "il token Facebook non ha il permesso di pubblicare (pages_manage_posts): rigeneralo includendo quel permesso";
+  if (e.includes("oauth") || e.includes("expired") || e.includes("session has been invalidated") || e.includes("access token")) return "il token Facebook non è più valido o è scaduto: rigeneralo dal Profilo";
+  if (e.includes("pagina o token")) return "pagina o token Facebook non configurati per questa pubblicazione";
+  return (err || "").slice(0, 160);
+}
 
 // Sorgente token: profilo (connectionId null) o una connessione aggiunta.
 type Src = { connectionId: string | null; name: string; token: string };
@@ -76,9 +88,12 @@ Il token è GIÀ configurato e l'utente può amministrare PIÙ pagine.
   captionTemplate con segnaposto {colonna} se descritto.
 - intent=EXPORT_POSTS: l'utente vuole SALVARE/ESPORTARE gli ultimi N post di una pagina in un file CSV
   (es. "salvami gli ultimi 10 post della pagina X in un csv", "esporta i post di Pcs Bus"). Metti count = N (default 10).
-- intent=LIST_JOBS: l'utente chiede quali PUBBLICAZIONI PROGRAMMATE / cron / automazioni ha attive, o
-  PERCHÉ non è stato pubblicato (es. "hai cron job impostati?", "che pubblicazioni hai in programma?",
-  "perché non hai pubblicato oggi su Pcs Store?", "hai automazioni attive?", "quando esce il prossimo post?").
+- intent=LIST_JOBS: l'utente chiede quali PUBBLICAZIONI PROGRAMMATE / cron / automazioni ha attive
+  (es. "hai cron job impostati?", "che pubblicazioni hai in programma?", "quando esce il prossimo post?").
+- intent=DIAGNOSE: l'utente chiede COSA NON VA / perché qualcosa non funziona, o di controllare/verificare
+  la configurazione (es. "perché non hai pubblicato?", "cosa non funziona?", "controlla che sia tutto a posto",
+  "fai una diagnosi", "il token è valido?", "verifica le pubblicazioni"). Eseguo controlli su token, permessi,
+  pubblicazioni fallite e file mancanti e spiego i problemi.
 - intent=NEED_INFO: SOLO se per SCHEDULE manca la fonte dati o la frequenza.`;
 
   let parsed: z.infer<typeof jobSchema>;
@@ -122,6 +137,39 @@ Il token è GIÀ configurato e l'utente può amministrare PIÙ pagine.
     return {
       finalResult: `📅 **Pubblicazioni programmate** (${jobs.length}, di cui ${attivi} attive):\n${lines.join("\n")}\n\nVuoi crearne una nuova, metterne una in pausa o cambiarle l'orario?`,
     };
+  }
+
+  // 2.6) DIAGNOSE: controlla cosa non va (token, permessi, pubblicazioni fallite, file) e spiega
+  if (parsed.intent === "DIAGNOSE") {
+    const L: string[] = ["🔎 **Diagnosi del tuo Agente Social**", "", "**Connessioni Facebook:**"];
+    for (const s of sources) {
+      try {
+        const [perms, pgs] = await Promise.all([getTokenPermissions(s.token).catch(() => [] as string[]), listFacebookPages(s.token)]);
+        const canPost = perms.includes("pages_manage_posts");
+        L.push(`• ${s.name}: ✅ token valido · ${pgs.length} pagine` + (canPost ? " · può pubblicare" : " · ⚠️ NON può pubblicare (manca `pages_manage_posts`)"));
+      } catch (e: any) {
+        L.push(`• ${s.name}: ⚠️ token non valido o scaduto → rigeneralo dal Profilo (${String(e.message || "").slice(0, 70)})`);
+      }
+    }
+    const jobs = await prisma.scheduledJob.findMany({ where: { userId }, orderBy: { updatedAt: "desc" } });
+    L.push("", "**Pubblicazioni programmate:**");
+    if (!jobs.length) {
+      L.push("• Nessuna pubblicazione programmata (quindi non viene pubblicato nulla in automatico).");
+    } else {
+      const failed = jobs.filter((j) => j.lastStatus === "ERROR");
+      L.push(`• ${jobs.length} totali · ${jobs.filter((j) => j.status === "ACTIVE").length} attive · ${failed.length} con errore.`);
+      for (const j of failed) L.push(`   ❌ "${j.name}" (${j.fbPageName || "pagina"}): ${friendlyError(j.lastError)}`);
+    }
+    const missing: string[] = [];
+    for (const j of jobs) {
+      if ((j.sourceType === "CSV" || j.sourceType === "EXCEL") && j.sourceRef) {
+        const p = path.join(process.cwd(), "shared_data", userId, j.sourceRef);
+        if (!fs.existsSync(p)) missing.push(`• "${j.name}": file dati "${j.sourceRef}" mancante → ricaricalo dal pannello`);
+      }
+    }
+    if (missing.length) L.push("", "**File dati mancanti:**", ...missing);
+    L.push("", "Dimmi quale di questi problemi vuoi che sistemiamo e ti guido passo-passo. 🙂");
+    return { finalResult: L.join("\n") };
   }
 
   // Elenca le pagine da TUTTE le sorgenti (profilo + connessioni), dedup per id.

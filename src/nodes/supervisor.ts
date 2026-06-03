@@ -82,6 +82,8 @@ ${companyBlock}
    - "pubblica ogni giorno alle 9 un prodotto dal mio Google Sheet / file Excel" → ricorrente
    - "programma post automatici", "imposta un cron per pubblicare sui social"
    - Qualsiasi richiesta di pubblicazione su Facebook, immediata o pianificata
+   - DIAGNOSI/problemi social: "perché non hai pubblicato?", "cosa non funziona?", "controlla che sia
+     tutto a posto", "il token è valido?", "verifica le pubblicazioni" → instrada qui (fa una diagnosi).
    NON usare 'coder' per questo: lo scheduler gestisce credenziali cifrate, test e cron.
    Le 'instructions' devono riportare integralmente la richiesta dell'utente.
 
