@@ -135,9 +135,14 @@ def _gen_ai_image(subject):
         print(f"(immagine AI fallita: {e})")
         return None
 
+def _looks_logo(u):
+    u = str(u or "").lower()
+    return any(k in u for k in ("logo", "favicon", "icon", "sprite", "brand"))
+
 def resolve_image(content_image_url, subject):
     # Cascata: 1) immagine del contenuto  2) pool caricato (rotazione)  3) AI se abilitato
-    if content_image_url and str(content_image_url).lower().startswith("http"):
+    # REGOLA: niente loghi/icone come immagine del post (si sgranano su Facebook).
+    if content_image_url and str(content_image_url).lower().startswith("http") and not _looks_logo(content_image_url):
         return content_image_url, None
     if pool_files:
         fn = pool_files[pool_index % len(pool_files)]
@@ -410,7 +415,7 @@ try:
         page.goto(url, wait_until="networkidle", timeout=45000)
         site_title = (page.title() or "").strip()
         blocks = page.eval_on_selector_all("h1,h2,h3,p,li", "els => els.map(e => (e.innerText||'').trim()).filter(t => t.length > 40)")
-        imgs = page.eval_on_selector_all("img", "els => els.map(e => e.currentSrc || e.src || '').filter(Boolean)")
+        imgs = page.eval_on_selector_all("img", "els => els.map(e => ({src:(e.currentSrc||e.src||''), w:(e.naturalWidth||0), h:(e.naturalHeight||0), alt:(e.alt||''), cls:(e.className||'')})).filter(o => o.src)")
         og = ""
         try:
             el = page.query_selector("meta[property='og:image']")
@@ -429,18 +434,34 @@ for t in blocks:
     if len(t) > 40 and t not in seen:
         seen.add(t); texts.append(t)
 
-# Pulisci immagini (http assolute, niente svg/data/icone minuscole note)
+# Pulisci immagini: http assolute, niente svg/data/sprite, ESCLUDI loghi/icone e immagini piccole
+LOGO_KW = ("logo", "favicon", "icon", "sprite", "brand", "header")
+
+def _is_logo(src, alt, cls, w, h):
+    blob = (str(src) + " " + str(alt) + " " + str(cls)).lower()
+    if any(k in blob for k in LOGO_KW):
+        return True
+    try:
+        if w and h and (int(w) < 200 or int(h) < 200):  # icone/loghi piccoli
+            return True
+    except Exception:
+        pass
+    return False
+
 good = []
-if og:
+if og and not _is_logo(og, "", "", 0, 0):
     good.append(og)
-for s in imgs:
-    s = str(s)
+for o in imgs:
+    s = str(o.get("src", ""))
     if s.startswith("//"):
         s = "https:" + s
     low = s.lower()
-    if low.startswith("http") and ".svg" not in low and "data:" not in low and "sprite" not in low:
-        if s not in good:
-            good.append(s)
+    if not low.startswith("http") or ".svg" in low or "data:" in low:
+        continue
+    if _is_logo(s, o.get("alt", ""), o.get("cls", ""), o.get("w", 0), o.get("h", 0)):
+        continue
+    if s not in good:
+        good.append(s)
 
 # Costruisci gli item: ogni blocco di testo con un'immagine (a rotazione)
 for i, t in enumerate(texts[:25]):
