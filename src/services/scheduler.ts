@@ -125,6 +125,13 @@ async function runJob(prisma: PrismaClient, job: any, opts: { preview?: boolean 
       env.WEB_TITLE = it.title || "";
       env.WEB_CONTENT = it.content || "";
       env.WEB_IMAGE = it.imageUrl || "";
+      // Conta le immagini DISTINTE e valide del sito (no logo). Se sono poche (<=1, es. solo
+      // la copertina) e l'AI è attiva, lo script genera un'immagine AI diversa per ogni post.
+      const isLogoUrl = (u: string) => /logo|favicon|icon|sprite|brand/i.test(u || "");
+      const distinctImgs = new Set(
+        items.map((x) => (x.imageUrl || "").trim()).filter((u) => /^https?:\/\//i.test(u) && !isLogoUrl(u))
+      );
+      env.FEW_SITE_IMAGES = distinctImgs.size <= 1 ? "true" : "false";
     }
 
     if (opts.preview) env.PREVIEW = "true";

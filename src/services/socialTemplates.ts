@@ -49,6 +49,7 @@ auto_image = os.environ.get("AUTO_IMAGE", "").strip().lower() == "true"
 image_context = os.environ.get("IMAGE_CONTEXT", "").strip()
 image_ai_model = os.environ.get("IMAGE_AI_MODEL", "").strip() or "google/gemini-3.1-flash-image-preview"
 preview_mode = os.environ.get("PREVIEW", "").strip().lower() == "true"
+few_site_images = os.environ.get("FEW_SITE_IMAGES", "").strip().lower() == "true"
 
 USAGE = {"p": 0, "c": 0}  # token AI accumulati (per il conteggio crediti)
 
@@ -140,6 +141,12 @@ def _looks_logo(u):
     return any(k in u for k in ("logo", "favicon", "icon", "sprite", "brand"))
 
 def resolve_image(content_image_url, subject):
+    # Se il sito ha POCHE immagini (es. solo la copertina) e l'AI è attiva: genera un'immagine
+    # AI DIVERSA per ogni post (varietà) invece di ripetere sempre la stessa copertina.
+    if auto_image and few_site_images:
+        p = _gen_ai_image(subject)
+        if p:
+            return None, p
     # Cascata: 1) immagine del contenuto  2) pool caricato (rotazione)  3) AI se abilitato
     # REGOLA: niente loghi/icone come immagine del post (si sgranano su Facebook).
     if content_image_url and str(content_image_url).lower().startswith("http") and not _looks_logo(content_image_url):
