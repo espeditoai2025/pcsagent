@@ -66,7 +66,25 @@ try:
 except Exception:
     pass
 
+def clean_fb_text(t):
+    # Facebook NON interpreta il Markdown: i marcatori (** ~~ # backtick ecc.) verrebbero
+    # mostrati come caratteri grezzi. Li rimuoviamo / convertiamo in testo semplice.
+    if not t:
+        return t
+    t = re.sub(r"\*\*(.+?)\*\*", r"\1", t, flags=re.S)   # **grassetto** -> testo
+    t = re.sub(r"__(.+?)__", r"\1", t, flags=re.S)        # __grassetto__ -> testo
+    t = t.replace("**", "").replace("__", "")             # marcatori spaiati residui
+    # ~~barrato~~ -> barrato VERO con caratteri Unicode combinanti (reso su Facebook)
+    t = re.sub(r"~~(.+?)~~", lambda m: "".join(c + chr(0x336) for c in m.group(1)), t, flags=re.S)
+    t = t.replace("~~", "")
+    t = t.replace(chr(96), "")                            # rimuove i backtick (codice)
+    t = re.sub(r"(?m)^\s{0,3}#{1,6}\s*", "", t)           # titoli markdown a inizio riga
+    t = re.sub(r"(?m)^\s{0,3}>\s?", "", t)                # citazioni >
+    t = re.sub(r"\[([^\]]+)\]\((https?://[^)]+)\)", r"\1", t)  # [testo](url) -> testo
+    return t
+
 def publish(message, image_url=None, image_file=None):
+    message = clean_fb_text(message)
     # Facebook "collassa" le righe vuote nei post via API: inserisco un carattere
     # invisibile (Braille blank U+2800) sulle righe vuote per preservare la
     # spaziatura tra i paragrafi (cosi il post pubblicato corrisponde all'anteprima).
@@ -134,6 +152,7 @@ def resolve_image(content_image_url, subject):
 
 def emit_preview(caption, image_url=None, image_file=None):
     # Anteprima: NON pubblica. Restituisce caption + riferimento immagine per il pannello.
+    caption = clean_fb_text(caption)
     img = ""
     if image_url:
         img = image_url
@@ -166,6 +185,8 @@ if source_type == "WEBSITE":
             f"basato sul seguente contenuto del nostro sito. RIELABORALO con parole NUOVE (non copiarlo), "
             f"ogni volta in modo diverso. FORMATTAZIONE: testo ben spaziato su piu righe separate da una riga "
             f"vuota, qualche emoji, e una breve call-to-action finale.\n"
+            f"TESTO SEMPLICE per Facebook: NON usare Markdown (niente **grassetto**, niente ~~barrato~~, niente #): "
+            f"Facebook li mostra come simboli.\n"
             f"Tono: {ai_tone}. NON inventare dati o prezzi non presenti. NON scrivere indirizzo, telefono, "
             f"WhatsApp o sito (li aggiungo io sotto). Rispondi SOLO col testo del post, senza virgolette.\n\n"
             f"Titolo: {web_title}\nContenuto: {web_content[:1500]}"
@@ -280,6 +301,9 @@ def build_caption(row):
             f"FORMATTAZIONE IMPORTANTE: testo ben spaziato e leggibile, NON un unico blocco. Struttura su piu "
             f"sezioni separate da una RIGA VUOTA: 1) un gancio iniziale accattivante; 2) l'offerta col prezzo "
             f"(sconto in evidenza); 3) una breve call-to-action (es. 'Passa a trovarci!'). Usa qualche emoji.\n"
+            f"TESTO SEMPLICE per Facebook: NON usare Markdown (niente **grassetto**, niente #, niente _corsivo_): "
+            f"Facebook li mostra come simboli. UNICA eccezione: per il prezzo VECCHIO da barrare usa la sintassi "
+            f"~~prezzo~~ (verra mostrato barrato).\n"
             f"Tono: {ai_tone}. NON inventare nulla. NON scrivere indirizzo, telefono, WhatsApp o sito web "
             f"(li aggiungo io sotto). Rispondi SOLO col testo del post, senza virgolette.\n\n"
             + "\n".join(info)
