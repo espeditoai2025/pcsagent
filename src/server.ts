@@ -7,6 +7,7 @@ import { ChatOpenAI } from "@langchain/openai";
 import { streamSSE } from "hono/streaming";
 import * as fs from "fs";
 import * as path from "path";
+import * as cryptoNode from "crypto";
 import { PrismaClient } from "@prisma/client";
 const pdfParse = require("pdf-parse");
 import { processAndStoreDocument } from "./utils/embeddings";
@@ -20,6 +21,24 @@ dotenv.config();
 
 const app = new Hono();
 const prisma = new PrismaClient();
+
+// ===== Autenticazione di servizio (Vercel -> VPS) =====
+// Tutte le rotte /api/* richiedono l'header x-pcs-secret = PCS_API_SECRET (.env).
+// Se PCS_API_SECRET non è impostata il controllo è DISATTIVATO: rollout sicuro
+// (prima si deploya il codice, poi si imposta l'env su VPS+Vercel, infine si chiude la porta).
+const API_SECRET = process.env.PCS_API_SECRET || "";
+if (!API_SECRET) console.warn("[auth] PCS_API_SECRET non impostata: API aperte (impostarla appena Vercel invia l'header).");
+app.use("/api/*", async (c, next) => {
+  if (!API_SECRET) return next();
+  const given = c.req.header("x-pcs-secret") || "";
+  // Confronto a tempo costante su digest (lunghezze sempre uguali)
+  const a = cryptoNode.createHash("sha256").update(given).digest();
+  const b = cryptoNode.createHash("sha256").update(API_SECRET).digest();
+  if (!cryptoNode.timingSafeEqual(a, b)) {
+    return c.json({ error: "Unauthorized" }, 401);
+  }
+  return next();
+});
 
 // Cartella file isolata per-utente (multi-tenant)
 const SHARED = path.resolve(__dirname, "../shared_data");

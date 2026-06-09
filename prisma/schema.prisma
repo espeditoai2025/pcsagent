@@ -21,6 +21,8 @@ model User {
   acceptedTermsAt DateTime?      // consenso a Privacy e Termini (GDPR) al momento della registrazione
   emailVerifiedAt DateTime?      // email verificata (double opt-in); null = non verificata
   verifyToken     String?        // token monouso per il link di verifica email
+  resetToken      String?        // token monouso per il reset della password
+  resetTokenExpiresAt DateTime?  // scadenza del token di reset (1 ora)
   firstName      String?
   lastName       String?
   phone          String?
