@@ -421,7 +421,32 @@ try:
         page = browser.new_page(user_agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/120.0 Safari/537.36")
         page.goto(url, wait_until="networkidle", timeout=45000)
         site_title = (page.title() or "").strip()
-        blocks = page.eval_on_selector_all("h1,h2,h3,p,li", "els => els.map(e => (e.innerText||'').trim()).filter(t => t.length > 40)")
+        # Ogni blocco di testo viene abbinato all'immagine PIU VICINA nel DOM (stessa scheda
+        # prodotto/sezione): risale fino a 5 antenati e prende la prima img del contenitore.
+        pairs = page.evaluate("""() => {
+          const out = [];
+          const els = document.querySelectorAll('h1,h2,h3,p,li');
+          for (const e of els) {
+            const t = (e.innerText || '').trim();
+            if (t.length <= 40) continue;
+            let im = null, node = e;
+            for (let i = 0; i < 5 && node; i++) {
+              node = node.parentElement;
+              if (!node || node === document.body) break;
+              const cand = node.querySelector('img');
+              if (cand && (cand.currentSrc || cand.src)) { im = cand; break; }
+            }
+            out.push({
+              text: t,
+              img: im ? (im.currentSrc || im.src || '') : '',
+              alt: im ? (im.alt || '') : '',
+              cls: im ? (String(im.className) || '') : '',
+              w: im ? (im.naturalWidth || 0) : 0,
+              h: im ? (im.naturalHeight || 0) : 0
+            });
+          }
+          return out;
+        }""")
         imgs = page.eval_on_selector_all("img", "els => els.map(e => ({src:(e.currentSrc||e.src||''), w:(e.naturalWidth||0), h:(e.naturalHeight||0), alt:(e.alt||''), cls:(e.className||'')})).filter(o => o.src)")
         og = ""
         try:
@@ -434,12 +459,14 @@ except Exception as e:
     print(f"SCRAPE_ERR {e}")
     raise SystemExit(1)
 
-# Pulisci testi (dedup, niente troppo corti)
+# Pulisci testi (dedup, niente troppo corti) conservando l'immagine abbinata nel DOM
 seen = set(); texts = []
-for t in blocks:
-    t = " ".join(str(t).split())
-    if len(t) > 40 and t not in seen:
-        seen.add(t); texts.append(t)
+for p_ in pairs:
+    t = " ".join(str(p_.get("text", "")).split())
+    if len(t) <= 40 or t in seen:
+        continue
+    seen.add(t)
+    texts.append((t, p_))
 
 # Pulisci immagini: http assolute, niente svg/data/sprite, ESCLUDI loghi/icone e immagini piccole
 LOGO_KW = ("logo", "favicon", "icon", "sprite", "brand", "header")
@@ -454,6 +481,17 @@ def _is_logo(src, alt, cls, w, h):
     except Exception:
         pass
     return False
+
+def _clean_src(p_):
+    s = str(p_.get("img", ""))
+    if s.startswith("//"):
+        s = "https:" + s
+    low = s.lower()
+    if not low.startswith("http") or ".svg" in low or "data:" in low:
+        return ""
+    if _is_logo(s, p_.get("alt", ""), p_.get("cls", ""), p_.get("w", 0), p_.get("h", 0)):
+        return ""
+    return s
 
 good = []
 if og and not _is_logo(og, "", "", 0, 0):
@@ -470,9 +508,13 @@ for o in imgs:
     if s not in good:
         good.append(s)
 
-# Costruisci gli item: ogni blocco di testo con un'immagine (a rotazione)
-for i, t in enumerate(texts[:25]):
-    img = good[i % len(good)] if good else ""
+# Costruisci gli item: ogni testo con l'immagine della SUA scheda; rotazione solo se manca
+fb = 0
+for t, p_ in texts[:25]:
+    img = _clean_src(p_)
+    if not img and good:
+        img = good[fb % len(good)]
+        fb += 1
     items.append({"title": site_title[:120], "content": t[:1200], "imageUrl": img, "sourceUrl": url})
 
 if not items:
