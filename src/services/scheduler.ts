@@ -93,14 +93,33 @@ async function runJob(prisma: PrismaClient, job: any, opts: { preview?: boolean 
       IMAGE_CONTEXT: sa?.bizContext || job.bizName || sa?.bizName || companyName || "",
     };
 
-    // WEBSITE: la PRIMA volta fa scraping del sito e salva i contenuti; poi ruota tra quelli salvati
-    // (niente ri-scraping) e genera un post nuovo+diverso con immagine.
+    // WEBSITE: scansiona il sito alla prima esecuzione O quando l'elenco di URL cambia,
+    // salva i contenuti e poi ruota tra quelli salvati generando post sempre diversi.
+    // sourceRef può contenere PIÙ URL separati da virgola/punto e virgola/spazio/a-capo (max 5).
     if (job.sourceType === "WEBSITE") {
+      const normUrl = (u: string) => u.trim().toLowerCase().replace(/^https?:\/\//, "").replace(/\/+$/, "");
+      const urls = String(job.sourceRef || "").split(/[\s,;]+/).map((u) => u.trim()).filter(Boolean).slice(0, 5);
       let items = await prisma.scrapedItem.findMany({ where: { scheduledJobId: job.id }, orderBy: { createdAt: "asc" } });
+
+      // URL cambiati dopo l'ultima scansione? Butta la cache e ri-scansiona da zero.
+      if (items.length > 0) {
+        const scanned = new Set(items.map((x) => normUrl(x.sourceUrl || "")));
+        const wanted = new Set(urls.map(normUrl));
+        const changed = [...wanted].some((u) => !scanned.has(u)) || [...scanned].some((u) => !wanted.has(u));
+        if (changed) {
+          await prisma.scrapedItem.deleteMany({ where: { scheduledJobId: job.id } });
+          items = [];
+          job.cursor = 0; // riparti dal primo contenuto del nuovo sito
+        }
+      }
+
       if (items.length === 0) {
-        const scrape = await executePythonScript(WEBSITE_SCRAPE_SCRIPT, { env: { SCRAPE_URL: job.sourceRef }, workspace: job.userId });
-        const m = (scrape.output || "").match(/SCRAPE_JSON (.+)/);
-        if (m) {
+        let lastOut = "";
+        for (const u of urls) {
+          const scrape = await executePythonScript(WEBSITE_SCRAPE_SCRIPT, { env: { SCRAPE_URL: u }, workspace: job.userId });
+          lastOut = (scrape.output || scrape.error || "").slice(0, 200);
+          const m = (scrape.output || "").match(/SCRAPE_JSON (.+)/);
+          if (!m) continue;
           try {
             const arr = JSON.parse(m[1]);
             if (Array.isArray(arr) && arr.length) {
@@ -110,15 +129,15 @@ async function runJob(prisma: PrismaClient, job: any, opts: { preview?: boolean 
                   title: String(x.title || "").slice(0, 200) || null,
                   content: String(x.content || "").slice(0, 2000),
                   imageUrl: String(x.imageUrl || "").slice(0, 1000) || null,
-                  sourceUrl: String(x.sourceUrl || job.sourceRef).slice(0, 1000),
+                  sourceUrl: String(x.sourceUrl || u).slice(0, 1000),
                 })),
               });
-              items = await prisma.scrapedItem.findMany({ where: { scheduledJobId: job.id }, orderBy: { createdAt: "asc" } });
             }
           } catch { /* JSON non valido */ }
         }
+        items = await prisma.scrapedItem.findMany({ where: { scheduledJobId: job.id }, orderBy: { createdAt: "asc" } });
         if (items.length === 0) {
-          throw new Error("Scraping del sito non riuscito o nessun contenuto trovato. " + (scrape.output || scrape.error || "").slice(0, 200));
+          throw new Error("Scraping del sito non riuscito o nessun contenuto trovato. " + lastOut);
         }
       }
       const it = items[(job.cursor || 0) % items.length];
