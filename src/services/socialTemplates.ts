@@ -57,15 +57,59 @@ if not page_id or not token:
     print("ERRORE: credenziali Facebook mancanti (FB_PAGE_ID / FB_ACCESS_TOKEN).")
     sys.exit(1)
 
-# Risolvi il PAGE access token (necessario per pubblicare come pagina)
+def _err_of(body):
+    # Estrae l'oggetto "error" da una risposta Graph API (None se non c'e).
+    e = body.get("error") if isinstance(body, dict) else None
+    return e if isinstance(e, dict) else None
+
+def fb_fatal(err, preflight=False):
+    # Riconosce gli errori Meta che valgono per TUTTA l'esecuzione (app bloccata, token
+    # non valido, permesso mancante): riprovare sulle altre righe e inutile e brucerebbe
+    # solo token AI. Ritorna la spiegazione in italiano, oppure None se non e fatale.
+    # Con preflight=True e piu prudente: blocca solo sugli errori inequivocabili, perche
+    # li stiamo decidendo PRIMA di aver anche solo provato a pubblicare.
+    if not isinstance(err, dict):
+        return None
+    msg = str(err.get("message") or "")
+    low = msg.lower()
+    code = err.get("code")
+    sub = err.get("error_subcode")
+    if "api access blocked" in low or "app is blocked" in low:
+        return ("L'app Facebook ha l'accesso alle API BLOCCATO da Meta. Apri developers.facebook.com "
+                "-> la tua app -> Avvisi e completa la Verifica dell'utilizzo dei dati (Data Use Checkup), "
+                "poi controlla eventuali restrizioni per violazione delle policy. "
+                "Finche l'app resta bloccata nessun post puo partire.")
+    if code == 190 or sub in (458, 460, 463, 467):
+        return ("Il token Facebook non e piu valido o e scaduto: rigeneralo dal Profilo "
+                "concedendo il permesso pages_manage_posts.")
+    if preflight:
+        return None  # errori ambigui: proviamo comunque a pubblicare
+    if code == 10 or "pages_manage_posts" in low:
+        return ("Il token Facebook non ha il permesso di pubblicare sulla pagina (pages_manage_posts): "
+                "rigeneralo dal Profilo concedendo quel permesso.")
+    if code == 368 or sub == 1404006:
+        return "La pagina Facebook e temporaneamente bloccata da Meta: riprova tra qualche giorno."
+    if code == 200:
+        return f"Facebook ha negato il permesso di pubblicare su questa pagina (codice 200): {msg}"
+    return None
+
+# Risolvi il PAGE access token (necessario per pubblicare come pagina). Serve anche da
+# PREFLIGHT: se Meta ha bloccato l'app o il token non e valido lo scopriamo QUI, prima di
+# spendere token AI per caption e immagini che non verrebbero mai pubblicate.
 post_token = token
+_pre = None
 try:
     _r = requests.get(f"{GRAPH}/{page_id}", params={"fields": "access_token", "access_token": token}, timeout=30)
     _j = _r.json()
     if _r.status_code == 200 and _j.get("access_token"):
         post_token = _j["access_token"]
+    else:
+        _pre = fb_fatal(_err_of(_j), preflight=True)
 except Exception:
     pass
+if _pre:
+    print("FB_BLOCKED " + _pre)
+    sys.exit(1)
 
 def clean_fb_text(t):
     # Facebook NON interpreta il Markdown: i marcatori (** ~~ # backtick ecc.) verrebbero
@@ -99,8 +143,9 @@ def publish(message, image_url=None, image_file=None):
         r = requests.post(f"{GRAPH}/{page_id}/feed", data={"message": message, "access_token": post_token}, timeout=60)
     b = r.json() if r.headers.get("content-type", "").startswith("application/json") else {"raw": r.text}
     if r.status_code == 200 and (b.get("id") or b.get("post_id")):
-        return True, (b.get("post_id") or b.get("id"))
-    return False, f"HTTP {r.status_code}: {json.dumps(b)[:300]}"
+        return True, (b.get("post_id") or b.get("id")), None
+    # Il terzo valore e l'oggetto "error" di Meta: serve a capire se e un errore FATALE.
+    return False, f"HTTP {r.status_code}: {json.dumps(b)[:300]}", _err_of(b)
 
 def _gen_ai_image(subject):
     # Genera un'immagine col modello AI, salva in /app/data, ritorna il path (o None).
@@ -178,11 +223,14 @@ if source_type == "TEXT":
     if preview_mode:
         emit_preview(caption)
         sys.exit(0)
-    ok, msg = publish(caption)
+    ok, msg, err = publish(caption)
     if ok:
         print(f"POST_OK {msg} | {caption[:80]}")
         sys.exit(0)
     print(f"ERRORE pubblicazione Facebook ({msg})")
+    _f = fb_fatal(err)
+    if _f:
+        print("FB_BLOCKED " + _f)
     sys.exit(1)
 
 # --- Modalita WEBSITE: genera un post NUOVO da un contenuto gia estratto dal sito ---
@@ -229,12 +277,15 @@ if source_type == "WEBSITE":
         emit_preview(caption, img_url, img_file)
         print(f"AI_USAGE {USAGE['p']} {USAGE['c']} {ai_model}")
         sys.exit(0)
-    ok, msg = publish(caption, img_url, img_file)
+    ok, msg, err = publish(caption, img_url, img_file)
     print(f"AI_USAGE {USAGE['p']} {USAGE['c']} {ai_model}")
     if ok:
         print(f"POST_OK web (id {msg}): {caption[:70]}")
         sys.exit(0)
     print(f"ERRORE pubblicazione Facebook ({msg})")
+    _f = fb_fatal(err)
+    if _f:
+        print("FB_BLOCKED " + _f)
     sys.exit(1)
 
 if not source_ref:
@@ -380,16 +431,25 @@ if preview_mode:
 
 # 3b) Pubblica
 n_ok = 0
-for i in indices:
+for k, i in enumerate(indices):
     try:
         caption, image_url = build_caption(df.iloc[i])
         img_url, img_file = resolve_image(image_url, caption)
-        ok, msg = publish(caption, img_url, img_file)
+        ok, msg, err = publish(caption, img_url, img_file)
         if ok:
             n_ok += 1
             print(f"POST_OK riga {i} (id {msg}): {caption[:70]}")
         else:
             print(f"POST_ERR riga {i}: {msg}")
+            # Errore fatale (app bloccata, token/permessi): le righe rimanenti
+            # fallirebbero identiche, quindi ci fermiamo senza bruciare altri token AI.
+            _f = fb_fatal(err)
+            if _f:
+                print("FB_BLOCKED " + _f)
+                _rest = len(indices) - k - 1
+                if _rest > 0:
+                    print(f"(interrotto: {_rest} righe non tentate)")
+                break
     except Exception as e:
         print(f"POST_ERR riga {i}: {e}")
 

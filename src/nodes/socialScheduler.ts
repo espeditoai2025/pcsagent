@@ -6,6 +6,7 @@ import { chargeUser } from "../services/tokenMeter";
 import { executePythonScript } from "../services/dockerService";
 import { FACEBOOK_POST_SCRIPT } from "../services/socialTemplates";
 import { listFacebookPages, getTokenPermissions, getPageAccessToken, getRecentPagePosts, FacebookPage } from "../services/facebook";
+import { friendlyError } from "../services/socialErrors";
 import { decryptSecret } from "../utils/crypto";
 import { PrismaClient } from "@prisma/client";
 import fs from "fs";
@@ -32,18 +33,6 @@ const jobSchema = z.object({
 });
 
 const pageList = (pages: { name: string }[]) => pages.map((p) => `• ${p.name}`).join("\n");
-
-// Traduce gli errori tecnici delle esecuzioni in spiegazioni comprensibili (diagnostica).
-function friendlyError(err: string | null | undefined): string {
-  const e = (err || "").toLowerCase();
-  if (!e) return "errore sconosciuto";
-  if (e.includes("pcsai-python") || e.includes("no such image") || e.includes("docker")) return "l'ambiente di esecuzione del server non era disponibile (problema tecnico lato server, da sistemare dall'amministratore)";
-  if (e.includes("no such file") || e.includes("file not found") || e.includes("nessuna riga") || e.includes("caricamento fonte")) return "il file dei dati non è stato trovato: ricaricalo dal pannello";
-  if (e.includes("pages_manage_posts") || e.includes("permission")) return "il token Facebook non ha il permesso di pubblicare (pages_manage_posts): rigeneralo includendo quel permesso";
-  if (e.includes("oauth") || e.includes("expired") || e.includes("session has been invalidated") || e.includes("access token")) return "il token Facebook non è più valido o è scaduto: rigeneralo dal Profilo";
-  if (e.includes("pagina o token")) return "pagina o token Facebook non configurati per questa pubblicazione";
-  return (err || "").slice(0, 160);
-}
 
 // Sorgente token: profilo (connectionId null) o una connessione aggiunta.
 type Src = { connectionId: string | null; name: string; token: string };

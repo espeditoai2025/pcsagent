@@ -6,6 +6,7 @@ import { FACEBOOK_POST_SCRIPT, WEBSITE_SCRAPE_SCRIPT } from "./socialTemplates";
 import { modelForLevel } from "./aiLevels";
 import { chargeUser, chargeFlat } from "./tokenMeter";
 import { scanAgentComments } from "./commentResponder";
+import { friendlyError } from "./socialErrors";
 
 const TICK_MS = 60_000;
 
@@ -212,7 +213,8 @@ async function runJob(prisma: PrismaClient, job: any, opts: { preview?: boolean 
       data: {
         lastRunAt: new Date(),
         lastStatus: ok ? "OK" : "ERROR",
-        lastError: ok ? null : (result.error || out).slice(0, 500),
+        // Messaggio leggibile per la scheda; l'output grezzo resta in scheduledJobRun.error.
+        lastError: ok ? null : friendlyError(result.error || out).slice(0, 500),
         cursor: nextCursor,
         nextRunAt: computeNextRun(job.cronExpression, job.timezone),
       },
@@ -232,7 +234,7 @@ async function runJob(prisma: PrismaClient, job: any, opts: { preview?: boolean 
           data: {
             lastRunAt: new Date(),
             lastStatus: "ERROR",
-            lastError: String(e.message).slice(0, 500),
+            lastError: friendlyError(String(e.message)).slice(0, 500),
             nextRunAt: computeNextRun(job.cronExpression, job.timezone),
           },
         })
