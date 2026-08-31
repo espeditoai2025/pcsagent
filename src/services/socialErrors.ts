@@ -36,3 +36,24 @@ export function friendlyError(err: string | null | undefined): string {
   // 3) Sconosciuto: testo grezzo, senza inventare una causa.
   return raw;
 }
+
+/**
+ * Messaggio per l'utente a partire dall'eccezione di UNA chiamata Graph (elenco pagine,
+ * permessi, post recenti). Qui l'input non e' il log del container ma un singolo messaggio di
+ * Meta, quindi si puo' essere piu' espliciti di friendlyError — ma solo quando l'errore parla
+ * davvero del token: listFacebookPages lancia anche per rete giu', rate limit e 5xx, e mandare
+ * a rigenerare un token valido e' una diagnosi falsa.
+ */
+export function graphErrorMessage(err: unknown): string {
+  // Gli a-capo vanno via subito: questi messaggi finiscono dentro elenchi puntati in chat.
+  const em = String((err as { message?: string } | null)?.message ?? err ?? "")
+    .replace(/\s*\r?\n\s*/g, " ")
+    .trim();
+  if (!em) return "Facebook non ha risposto (errore senza dettagli)";
+  const fe = friendlyError(em);
+  if (fe !== em) return fe.length > 300 ? fe.slice(0, 300) + "…" : fe;
+  const tokenKO = /oauth|access token|session|expired|scadut|permission|pages_manage|\b190\b|\b102\b/i.test(em);
+  return tokenKO
+    ? `token non valido o scaduto → rigeneralo dal Profilo (${em.slice(0, 70)})`
+    : `controllo non riuscito, Facebook non risponde come dovrebbe (${em.slice(0, 90)})`;
+}

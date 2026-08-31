@@ -6,7 +6,7 @@ import { chargeUser } from "../services/tokenMeter";
 import { executePythonScript } from "../services/dockerService";
 import { FACEBOOK_POST_SCRIPT } from "../services/socialTemplates";
 import { listFacebookPages, getTokenPermissions, getPageAccessToken, getRecentPagePosts, FacebookPage } from "../services/facebook";
-import { friendlyError } from "../services/socialErrors";
+import { friendlyError, graphErrorMessage } from "../services/socialErrors";
 import { decryptSecret } from "../utils/crypto";
 import { PrismaClient } from "@prisma/client";
 import fs from "fs";
@@ -137,24 +137,7 @@ Il token è GIÀ configurato e l'utente può amministrare PIÙ pagine.
         const canPost = perms.includes("pages_manage_posts");
         L.push(`• ${s.name}: ✅ token valido · ${pgs.length} pagine` + (canPost ? " · può pubblicare" : " · ⚠️ NON può pubblicare (manca `pages_manage_posts`)"));
       } catch (e: any) {
-        // Qui l'input NON e' il log del container ma il messaggio di UNA chiamata Graph.
-        // em gia' trimmato: friendlyError trima l'input, quindi senza questo il confronto
-        // "ha riconosciuto qualcosa?" sarebbe vero anche solo per uno spazio di differenza.
-        const em = String(e?.message || "").trim();
-        const fe = friendlyError(em);
-        // La frase "rigenera il token" si dice solo se l'errore parla davvero del token:
-        // listFacebookPages lancia anche per rete giu', rate limit e 5xx di Meta, e mandare a
-        // rigenerare un token valido e' una diagnosi falsa (lo stesso motivo per cui
-        // socialErrors.ts non indovina piu' le cause).
-        const tokenKO = /oauth|access token|session|expired|scadut|permission|pages_manage|\b190\b|\b102\b/i.test(em);
-        L.push(
-          `• ${s.name}: ⚠️ ` +
-            (fe !== em
-              ? fe.length > 300 ? fe.slice(0, 300) + "…" : fe
-              : tokenKO
-                ? `token non valido o scaduto → rigeneralo dal Profilo (${em.slice(0, 70)})`
-                : `controllo non riuscito, Facebook non risponde come dovrebbe (${em.slice(0, 90)})`)
-        );
+        L.push(`• ${s.name}: ⚠️ ${graphErrorMessage(e)}`);
       }
     }
     const jobs = await prisma.scheduledJob.findMany({ where: { userId }, orderBy: { updatedAt: "desc" } });
@@ -198,7 +181,9 @@ Il token è GIÀ configurato e l'utente può amministrare PIÙ pagine.
         allPages.push({ ...p, connectionId: s.connectionId, connName: s.name, token: s.token });
       }
     } catch (e: any) {
-      pageErrors.push(`${s.name}: ${e.message}`);
+      // Stessa traduzione della diagnosi: qui a monte di OGNI intent finiva in chat il
+      // messaggio grezzo di Meta, spesso in inglese e senza dire cosa fare.
+      pageErrors.push(`${s.name}: ${graphErrorMessage(e)}`);
     }
   }
   const multi = sources.length > 1;
@@ -274,7 +259,7 @@ Il token è GIÀ configurato e l'utente può amministrare PIÙ pagine.
     try {
       posts = await getRecentPagePosts(pageToken, target.id, n);
     } catch (e: any) {
-      return { finalResult: `Non riesco a leggere i post di **${target.name}**: ${e.message}` };
+      return { finalResult: `Non riesco a leggere i post di **${target.name}**: ${graphErrorMessage(e)}` };
     }
     if (!posts.length) return { finalResult: `Non ho trovato post con testo o immagine sulla pagina **${target.name}**.` };
 
@@ -305,6 +290,18 @@ Il token è GIÀ configurato e l'utente può amministrare PIÙ pagine.
 
   // 5) TEST IMMEDIATO
   if (parsed.intent === "TEST_NOW") {
+    // Il test da chat non scansiona il sito (i contenuti vivono in ScrapedItem e li prepara lo
+    // scheduler): lanciare lo script in modalita' WEBSITE senza contenuto pubblicherebbe sulla
+    // pagina vera un post con la didascalia generica di ripiego, e la chat direbbe pure
+    // "pubblicato". Meglio spiegare che serve la pubblicazione programmata.
+    if (parsed.sourceType === "WEBSITE") {
+      return {
+        finalResult:
+          `Per pubblicare **dal sito** devo prima leggerlo, e la scansione la fa la pubblicazione programmata (non il test immediato): un test ora uscirebbe con un testo generico.\n\n` +
+          `Dimmi quando pubblicare — es. _"ogni giorno alle 9 pubblica dal sito ${parsed.sourceRef || "www.tuosito.it"} sulla pagina ${target.name}"_ — e alla prima esecuzione leggo il sito e genero i post.\n\n` +
+          `Se vuoi vedere prima com'è il risultato, usa **Anteprima** nella scheda della pubblicazione dal pannello: mostra testo e immagine senza pubblicare niente.`,
+      };
+    }
     try {
       const useAi = parsed.sourceType !== "TEXT";
       const indirizzo = [userData.street, userData.city, userData.zipCode].filter(Boolean).join(", ");
@@ -345,7 +342,10 @@ Il token è GIÀ configurato e l'utente può amministrare PIÙ pagine.
       // Il ripiego accetta anche POST_ERR: nelle modalita' con fonte dati il fallimento di una
       // riga si stampa cosi' e non esiste nessuna riga "ERRORE ...".
       const riga = out.split("\n").map((l) => l.trim()).find((l) => l.startsWith("ERRORE") || l.startsWith("POST_ERR"));
-      const errLine = friendly !== raw ? friendly : riga || raw.slice(0, 500);
+      // Ultimo ripiego: l'ULTIMA riga non vuota, non le prime. In un traceback Python le prime
+      // righe sono lo stack, l'eccezione vera sta in fondo.
+      const ultima = out.split("\n").map((l) => l.trim()).filter(Boolean).pop() || "";
+      const errLine = friendly !== raw ? friendly : riga || (ultima ? "Dettaglio tecnico: " + ultima.slice(0, 300) : raw.slice(0, 300));
       return { finalResult: `❌ Pubblicazione di test non riuscita sulla pagina **${target.name}**.\n\n${errLine}` };
     } catch (e: any) {
       return { finalResult: `Errore durante il test: ${e.message}` };

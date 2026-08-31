@@ -133,7 +133,7 @@ STEP 2 — Scarica e codifica in base64 per embedding nell'HTML:
       if openrouter_key:
           gen_r = requests.post('https://openrouter.ai/api/v1/chat/completions',
               headers={{'Authorization': f'Bearer {{openrouter_key}}', 'Content-Type': 'application/json'}},
-              json={{'model': 'google/gemini-3.1-flash-lite-image',
+              json={{'model': 'google/gemini-3.1-flash-image',
                     'messages': [{{'role': 'user', 'content': f'Professional product photo of {{q}}, white background, clean studio lighting'}}]}},
               timeout=30)
           if gen_r.status_code == 200:
@@ -148,7 +148,7 @@ STEP 2 — Scarica e codifica in base64 per embedding nell'HTML:
 
 REGOLA COSTO IMMAGINI (IMPORTANTE):
 - Stampa la riga esatta IMG_AI_GENERATED (una per immagine) SOLO quando GENERI un'immagine con l'AI
-  (modello google/gemini-3.1-flash-lite-image).
+  (modello google/gemini-3.1-flash-image).
 - NON stamparla MAI per immagini prese dal web, da un URL, da un file/catalogo/CSV o già fornite: quelle sono gratis.
 
 STEP 3 — Integra nell'HTML del documento (nel corpo del preventivo, accanto alla voce prodotto)

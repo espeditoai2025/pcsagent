@@ -84,9 +84,9 @@ export async function visionModelName(prisma: PrismaClient): Promise<string> {
 
 /**
  * Modello per la GENERAZIONE di immagini (deve produrre immagini in output).
- * Configurabile dall'admin via Setting "image_model"; default: gemini-3.1-flash-lite-image.
+ * Configurabile dall'admin via Setting "image_model"; default: gemini-3.1-flash-image.
  */
-export const IMAGE_DEFAULT = "google/gemini-3.1-flash-lite-image";
+export const IMAGE_DEFAULT = "google/gemini-3.1-flash-image";
 
 export async function imageModelName(prisma: PrismaClient): Promise<string> {
   try {

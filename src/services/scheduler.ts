@@ -98,7 +98,11 @@ async function runJob(prisma: PrismaClient, job: any, opts: { preview?: boolean 
     // salva i contenuti e poi ruota tra quelli salvati generando post sempre diversi.
     // sourceRef può contenere PIÙ URL separati da virgola/punto e virgola/spazio/a-capo (max 5).
     if (job.sourceType === "WEBSITE") {
-      const normUrl = (u: string) => u.trim().toLowerCase().replace(/^https?:\/\//, "").replace(/\/+$/, "");
+      // Chiave di confronto fra URL richiesti e URL gia' scansionati. Il taglio a 1000 va
+      // applicato ANCHE qui: sourceUrl in DB e' troncato a 1000, e senza lo stesso taglio da
+      // questo lato un indirizzo lunghissimo non combacerebbe mai con la sua riga, facendolo
+      // ri-scansionare a ogni esecuzione.
+      const normUrl = (u: string) => String(u).slice(0, 1000).trim().toLowerCase().replace(/^https?:\/\//, "").replace(/\/+$/, "");
       // Deduplicati per forma normalizzata: lo stesso indirizzo scritto due volte (o una volta
       // con https:// e una senza) altrimenti verrebbe scansionato due volte e i suoi contenuti
       // finirebbero doppi nella rotazione.
@@ -137,8 +141,11 @@ async function runJob(prisma: PrismaClient, job: any, opts: { preview?: boolean 
 
       // Quali URL vanno (ri)scansionati: quelli senza contenuti utilizzabili. Un URL gia'
       // provato ha il suo segnaposto e NON si ritenta subito (altrimenti si ri-scansiona a
-      // ogni run), ma dopo 24h si', cosi' un sito momentaneamente giu' rientra da solo.
-      const RISCANSIONE_MS = 24 * 3600_000;
+      // ogni run), ma il giorno dopo si', cosi' un sito momentaneamente giu' rientra da solo.
+      // 23h e non 24: il segnaposto porta l'orario di FINE scansione, quindi con un cron
+      // giornaliero l'intervallo fra due run e' 24h MENO qualche secondo e con la soglia a 24h
+      // esatte non si ritenterebbe mai.
+      const RISCANSIONE_MS = 23 * 3600_000;
       const adesso = Date.now();
       const perUrl = new Map<string, { utili: number; ultimo: number; ids: string[] }>();
       for (const x of items) {
@@ -156,16 +163,12 @@ async function runJob(prisma: PrismaClient, job: any, opts: { preview?: boolean 
 
       let lastOut = "";
       if (daScansionare.length > 0) {
-        // Via i segnaposto scaduti dei soli URL che stiamo per ri-scansionare: i contenuti
-        // degli altri URL restano dove sono.
-        const vecchi = daScansionare.flatMap((u) => perUrl.get(normUrl(u))?.ids || []);
-        if (vecchi.length > 0) await prisma.scrapedItem.deleteMany({ where: { id: { in: vecchi } } });
-        // Le pagine si scansionano in PARALLELO: dockerService ha gia' il suo semaforo, in
-        // sequenza il costo era la SOMMA dei timeout di navigazione (45s l'uno, fino a 5 URL).
-        const scrapes = await Promise.all(
-          daScansionare.map(async (u) => ({ u, res: await executePythonScript(WEBSITE_SCRAPE_SCRIPT, { env: { SCRAPE_URL: u }, workspace: job.userId }) }))
-        );
-        for (const { u, res } of scrapes) {
+        // Una pagina per volta, NON in parallelo: dockerService ha solo 2 posti e un job con
+        // piu' URL se li prenderebbe tutti, mettendo in coda le esecuzioni Python della chat.
+        // La scansione ormai avviene di rado (prima volta, cambio URL, o dopo 23h), quindi il
+        // tempo risparmiato non vale l'attesa di chi sta chattando.
+        for (const u of daScansionare) {
+          const res = await executePythonScript(WEBSITE_SCRAPE_SCRIPT, { env: { SCRAPE_URL: u }, workspace: job.userId });
           lastOut = (res.output || res.error || "").slice(0, 200);
           const m = (res.output || "").match(/SCRAPE_JSON (.+)/);
           let arr: any[] = [];
@@ -193,19 +196,32 @@ async function runJob(prisma: PrismaClient, job: any, opts: { preview?: boolean 
             if (!m || opts.preview) continue;
             rows.push({ scheduledJobId: job.id, title: null, content: "", imageUrl: null, sourceUrl: String(u).slice(0, 1000) });
           }
-          // FUORI dal catch del JSON: un errore di scrittura sul DB non e' un problema di
-          // scraping e non va mascherato da "nessun contenuto trovato".
-          await prisma.scrapedItem.createMany({ data: rows });
+          // Sostituzione ATOMICA delle righe di QUESTO url: o si rimpiazzano, o si tiene quello
+          // che c'era. Cancellando in anticipo, un errore dello scraping o della scrittura
+          // lasciava l'URL senza nessuna riga e il difetto della ri-scansione infinita tornava.
+          // Il createMany resta FUORI dal catch del JSON: un errore del DB non e' un problema
+          // di scraping e non va mascherato da "nessun contenuto trovato".
+          const vecchi = perUrl.get(normUrl(u))?.ids || [];
+          await prisma.$transaction([
+            ...(vecchi.length > 0 ? [prisma.scrapedItem.deleteMany({ where: { id: { in: vecchi } } })] : []),
+            prisma.scrapedItem.createMany({ data: rows }),
+          ]);
         }
         items = await prisma.scrapedItem.findMany({ where: { scheduledJobId: job.id }, orderBy: { createdAt: "asc" } });
       }
 
       const usable = usableOf(items);
       if (usable.length === 0) {
+        // Il motivo dell'errore in italiano: con urls vuoto NON ci sara' nessuna ri-scansione,
+        // quindi promettere "riprovo entro 24 ore" sarebbe falso. Dallo scraping si tiene solo
+        // la parte dopo SCRAPE_ERR (il messaggio dell'eccezione Playwright), su una riga sola.
+        const dettaglio = ((lastOut.match(/SCRAPE_ERR (.+)/) || [])[1] || lastOut).replace(/\s+/g, " ").trim().slice(0, 200);
         throw new Error(
-          daScansionare.length > 0
-            ? "Scraping del sito non riuscito o nessun contenuto trovato. " + lastOut
-            : "L'ultima scansione del sito non ha trovato contenuti utilizzabili; verra' ritentata entro 24 ore. Controlla che l'indirizzo sia giusto e che le pagine abbiano del testo."
+          urls.length === 0
+            ? "Nessun indirizzo del sito configurato per questa pubblicazione: reinseriscilo dal pannello."
+            : daScansionare.length > 0
+              ? "Il sito non e' stato letto: " + (dettaglio || "nessun contenuto trovato") + ". Controlla che l'indirizzo sia giusto e che le pagine abbiano del testo."
+              : "L'ultima scansione del sito non ha trovato contenuti utilizzabili; verra' ritentata al prossimo giorno. Controlla che l'indirizzo sia giusto e che le pagine abbiano del testo."
         );
       }
       const it = usable[(job.cursor || 0) % usable.length];
@@ -232,7 +248,7 @@ async function runJob(prisma: PrismaClient, job: any, opts: { preview?: boolean 
     // Immagini generate con l'AI dentro il post: 10.000 token ciascuna
     const aiImgs = (result.output || "").match(/^\s*IMG_AI_GENERATED\s*$/gim);
     if (aiImgs && aiImgs.length) {
-      await chargeFlat(prisma, job.userId, 10000 * aiImgs.length, "google/gemini-3.1-flash-lite-image", "image").catch(() => {});
+      await chargeFlat(prisma, job.userId, 10000 * aiImgs.length, "google/gemini-3.1-flash-image", "image").catch(() => {});
     }
 
     // ANTEPRIMA: non pubblica, non scrive lo stato. Restituisce caption + immagine.

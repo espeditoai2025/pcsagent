@@ -27,16 +27,20 @@ import { getPriceMap, FALLBACK_BASE_OUT } from "./pricing";
 export const MODEL_WEIGHTS: Record<string, number> = {
   "google/gemini-3.1-flash-lite": 1, // $1.50/M out
   "openai/text-embedding-3-small": 1, // non in listino: tenuto a 1
-  "perplexity/sonar": 1, // non in listino: tenuto a 1 (era 5 sulla vecchia scala)
+  "perplexity/sonar": 1, // ~$1/M out; assente dall'archivio filtrato, presente nel listino live
   "openai/gpt-5.4-mini": 3, // $4.50/M out
   "anthropic/claude-opus-4.6": 16.67, // $25/M out
   "openai/gpt-5.6-luna": 0.8, // $1.20/M out
   "openai/gpt-5.6-sol": 6.67, // $10/M out
   "openai/gpt-5.6-sol-pro": 6.67, // stesso prezzo di sol (reasoning "pro" = piu' token, non tariffa piu' alta)
   "anthropic/claude-opus-5": 16.67, // $25/M out
-  "google/gemini-3.1-flash-lite-image": 1, // $1.50/M out
+  "google/gemini-3.1-flash-image": 2, // $3/M out (prezzo della variante -preview letto il 2026-08-08)
 };
-export const DEFAULT_WEIGHT = 5;
+// Modello sconosciuto: si assume il prezzo di un modello di fascia media ($4,50/M out, come
+// gpt-5.4-mini) invece del 5 ereditato dalla vecchia scala. Dal 2026-08-31 questo valore e'
+// raggiungibile anche da chargeUser (quando il listino prezzi non risponde), quindi un 5
+// significava addebitare 5x a un modello che magari costa un quinto.
+export const DEFAULT_WEIGHT = 3;
 
 export function weightFor(model: string): number {
   if (!model) return DEFAULT_WEIGHT;
@@ -45,6 +49,9 @@ export function weightFor(model: string): number {
   for (const key of Object.keys(MODEL_WEIGHTS)) {
     if (model.includes(key)) return MODEL_WEIGHTS[key];
   }
+  // Il default e' una STIMA: va lasciata traccia, altrimenti un modello nuovo viene addebitato
+  // a un prezzo inventato per mesi senza che nessuno se ne accorga.
+  console.warn(`[TokenMeter] Modello senza peso noto: "${model}" -> peso di default ${DEFAULT_WEIGHT}. Aggiungilo a MODEL_WEIGHTS.`);
   return DEFAULT_WEIGHT;
 }
 
