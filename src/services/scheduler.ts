@@ -99,23 +99,39 @@ async function runJob(prisma: PrismaClient, job: any, opts: { preview?: boolean 
     // sourceRef può contenere PIÙ URL separati da virgola/punto e virgola/spazio/a-capo (max 5).
     if (job.sourceType === "WEBSITE") {
       const normUrl = (u: string) => u.trim().toLowerCase().replace(/^https?:\/\//, "").replace(/\/+$/, "");
-      const urls = String(job.sourceRef || "").split(/[\s,;]+/).map((u) => u.trim()).filter(Boolean).slice(0, 5);
+      // Deduplicati per forma normalizzata: lo stesso indirizzo scritto due volte (o una volta
+      // con https:// e una senza) altrimenti verrebbe scansionato due volte e i suoi contenuti
+      // finirebbero doppi nella rotazione.
+      const vistiUrl = new Set<string>();
+      const urls = String(job.sourceRef || "")
+        .split(/[\s,;]+/)
+        .map((u) => u.trim())
+        .filter(Boolean)
+        .filter((u) => {
+          const k = normUrl(u);
+          if (vistiUrl.has(k)) return false;
+          vistiUrl.add(k);
+          return true;
+        })
+        .slice(0, 5);
       let items = await prisma.scrapedItem.findMany({ where: { scheduledJobId: job.id }, orderBy: { createdAt: "asc" } });
       // Le righe con content VUOTO sono SEGNAPOSTO: registrano che un URL e' gia' stato
       // scansionato anche quando non ha prodotto contenuti. Non si pubblicano mai.
       const usableOf = (rows: typeof items) => rows.filter((x) => (x.content || "").trim());
 
-      // URL cambiati dopo l'ultima scansione? Butta la cache e ri-scansiona da zero.
+      // URL RIMOSSI dall'elenco: si cancellano solo le LORO righe. Gli URL aggiunti li prende
+      // in carico "daScansionare" qui sotto. Cancellare tutto (come si faceva prima) buttava
+      // via anche i contenuti degli URL rimasti validi e azzerava il cursore, facendo
+      // ripubblicare contenuti gia' usciti.
       // Solo se un elenco di URL c'e' davvero: un sourceRef svuotato per errore dal pannello
-      // non deve cancellare i contenuti gia' estratti.
+      // non deve cancellare niente.
       if (items.length > 0 && urls.length > 0) {
-        const scanned = new Set(items.map((x) => normUrl(x.sourceUrl || "")));
         const wanted = new Set(urls.map(normUrl));
-        const changed = [...wanted].some((u) => !scanned.has(u)) || [...scanned].some((u) => !wanted.has(u));
-        if (changed) {
-          await prisma.scrapedItem.deleteMany({ where: { scheduledJobId: job.id } });
-          items = [];
-          job.cursor = 0; // riparti dal primo contenuto del nuovo sito
+        const daButtare = items.filter((x) => !wanted.has(normUrl(x.sourceUrl || ""))).map((x) => x.id);
+        if (daButtare.length > 0) {
+          await prisma.scrapedItem.deleteMany({ where: { id: { in: daButtare } } });
+          items = items.filter((x) => !daButtare.includes(x.id));
+          job.cursor = 0; // l'elenco dei contenuti e' cambiato: riparti dal primo
         }
       }
 
@@ -167,10 +183,14 @@ async function runJob(prisma: PrismaClient, job: any, opts: { preview?: boolean 
               sourceUrl: String(x.sourceUrl || u).slice(0, 1000),
             }))
             .filter((r) => r.content.trim());
-          // Segnaposto per un URL che non ha dato nulla: senza, il confronto qui sopra lo
-          // vedrebbe come "URL nuovo" a OGNI esecuzione e ri-scansionerebbe tutto il sito
-          // azzerando il cursore (stesso post ripubblicato all'infinito).
+          // Segnaposto per un URL che e' stato scansionato davvero ma non ha contenuti utili:
+          // senza, verrebbe visto come "URL nuovo" a OGNI esecuzione e si ri-scansionerebbe di
+          // continuo. Si scrive SOLO se lo script e' arrivato in fondo (SCRAPE_JSON emesso):
+          // un timeout di Playwright o un guasto del container sono transitori e devono poter
+          // essere ritentati subito, non fra 24 ore. Nemmeno l'anteprima lo scrive: un clic su
+          // "Anteprima" mentre il sito e' lento non deve mettere in pausa il job per un giorno.
           if (rows.length === 0) {
+            if (!m || opts.preview) continue;
             rows.push({ scheduledJobId: job.id, title: null, content: "", imageUrl: null, sourceUrl: String(u).slice(0, 1000) });
           }
           // FUORI dal catch del JSON: un errore di scrittura sul DB non e' un problema di
@@ -238,15 +258,16 @@ async function runJob(prisma: PrismaClient, job: any, opts: { preview?: boolean 
     const doneM = rawOut.match(/^ROWS_DONE (\d+)$/m);
     // Di quante righe far avanzare il cursore. Tre situazioni diverse, NON confondibili:
     //  1) ROWS_DONE c'e' -> lo script ha finito il ciclo e dice lui quante righe ha tentato;
-    //  2) NESSUN log (dockerService va in timeout a 5 min o in eccezione: ritorna output "")
-    //     -> il container e' stato ucciso e non sappiamo quanti post erano gia' partiti su
-    //     Facebook: si avanza di postsPerRun, perche' ripubblicare doppioni e' peggio che
-    //     saltare una riga;
-    //  3) log presente ma senza ROWS_DONE -> lo script e' morto prima o dentro il ciclo
-    //     (preflight FB_BLOCKED, fonte dati illeggibile, OOM kill): si avanza SOLO dei post
-    //     di cui c'e' la prova nel log, quindi 0 se non ne e' uscito nessuno.
-    const noLog = !rawOut.trim();
-    const attempted = doneM ? Math.max(0, parseInt(doneM[1], 10)) : noLog ? job.postsPerRun || 1 : okCount;
+    //  2) nessun log E timeout del container -> e' stato UCCISO mentre lavorava e non sappiamo
+    //     quanti post erano gia' partiti su Facebook: si avanza di postsPerRun, perche'
+    //     ripubblicare doppioni e' peggio che saltare una riga;
+    //  3) tutto il resto -> si avanza SOLO dei post di cui c'e' la prova nel log, quindi 0 se
+    //     non ne e' uscito nessuno. Ci rientrano sia lo script morto prima del ciclo (preflight
+    //     FB_BLOCKED, fonte dati illeggibile) sia i guasti dell'infrastruttura (demone Docker
+    //     giu', immagine pcsai-python assente, disco pieno): li' non e' stata tentata NESSUNA
+    //     riga, e farne avanzare il cursore brucerebbe righe del foglio a ogni tick.
+    const ucciso = /timeout execution exceeded/i.test(result.error || "");
+    const attempted = doneM ? Math.max(0, parseInt(doneM[1], 10)) : ucciso ? job.postsPerRun || 1 : okCount;
     // Batch parziale: lo script esce 0 con UNA sola riga pubblicata su tante, e senza questo
     // controllo la scheda direbbe "OK" anche con la maggior parte dei post non usciti.
     const partial = !!doneM && okCount > 0 && okCount < attempted;

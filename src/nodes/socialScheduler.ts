@@ -150,7 +150,7 @@ Il token è GIÀ configurato e l'utente può amministrare PIÙ pagine.
         L.push(
           `• ${s.name}: ⚠️ ` +
             (fe !== em
-              ? fe.slice(0, 200)
+              ? fe.length > 300 ? fe.slice(0, 300) + "…" : fe
               : tokenKO
                 ? `token non valido o scaduto → rigeneralo dal Profilo (${em.slice(0, 70)})`
                 : `controllo non riuscito, Facebook non risponde come dovrebbe (${em.slice(0, 90)})`)

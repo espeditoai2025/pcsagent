@@ -93,6 +93,23 @@ def fb_fatal(err, preflight=False):
         return f"Facebook ha negato il permesso di pubblicare su questa pagina (codice 200): {msg}"
     return None
 
+def fb_globale(err):
+    # Sottoinsieme di fb_fatal: gli errori che NON possono dipendere dal contenuto della riga
+    # (app bloccata, token morto, permesso mancante). Solo per questi la riga viene rimessa in
+    # coda: sappiamo che nessun post e' partito e che, sistemato il problema, uscira'.
+    # Per 368 e 200 la causa puo' essere il testo o il link della riga: rimetterla in coda
+    # bloccherebbe il job su quella riga per sempre.
+    if not isinstance(err, dict):
+        return False
+    low = str(err.get("message") or "").lower()
+    code = err.get("code")
+    sub = err.get("error_subcode")
+    if "api access blocked" in low or "app is blocked" in low:
+        return True
+    if code == 190 or sub in (458, 460, 463, 467):
+        return True
+    return code == 10 or "pages_manage_posts" in low
+
 # Risolvi il PAGE access token (necessario per pubblicare come pagina). Serve anche da
 # PREFLIGHT: se Meta ha bloccato l'app o il token non e valido lo scopriamo QUI, prima di
 # spendere token AI per caption e immagini che non verrebbero mai pubblicate.
@@ -282,7 +299,7 @@ if source_type == "WEBSITE":
     ok, msg, err = publish(caption, img_url, img_file)
     print(f"AI_USAGE {USAGE['p']} {USAGE['c']} {ai_model}")
     if ok:
-        print(f"POST_OK web (id {msg}): {caption[:70]}")
+        print(f"POST_OK web (id {msg}): " + " ".join(caption[:70].split()))
         sys.exit(0)
     print(f"ERRORE pubblicazione Facebook ({msg})")
     _f = fb_fatal(err)
@@ -435,7 +452,7 @@ if preview_mode:
 n_ok = 0
 fatal_hit = False
 n_done = 0          # righe effettivamente TENTATE (serve al cursore lato server)
-n_exc = 0           # eccezioni consecutive (rete giu': inutile insistere)
+n_bad = 0           # fallimenti CONSECUTIVI di qualunque tipo (dopo 3 e' inutile insistere)
 for k, i in enumerate(indices):
     n_done += 1
     try:
@@ -444,37 +461,40 @@ for k, i in enumerate(indices):
         ok, msg, err = publish(caption, img_url, img_file)
         if ok:
             n_ok += 1
-            n_exc = 0
+            n_bad = 0
             # La didascalia va su UNA riga: il log e' anche un canale di segnalazione
             # (FB_BLOCKED/POST_OK), un a-capo dentro il testo lo sporcherebbe.
             print(f"POST_OK riga {i} (id {msg}): " + " ".join(caption[:70].split()))
-        else:
-            print(f"POST_ERR riga {i}: {msg}")
-            n_exc = 0   # fallimento SENZA eccezione: la catena di errori di rete si interrompe qui
-            # Errore fatale (app bloccata, token/permessi): le righe rimanenti
-            # fallirebbero identiche, quindi ci fermiamo senza bruciare altri token AI.
-            _f = fb_fatal(err)
-            if _f:
-                fatal_hit = True
-                # Questa riga NON e' stata pubblicata e la causa e' esterna: scalarla dal
-                # conteggio, altrimenti il server fa avanzare il cursore e la salta.
-                n_done -= 1
-                print("FB_BLOCKED " + _f)
-                _rest = len(indices) - k
-                if _rest > 0:
-                    print(f"(interrotto: {_rest} righe non tentate)")
-                break
-    except Exception as e:
-        print(f"POST_ERR riga {i}: " + " ".join(str(e).split())[:200])
-        n_exc += 1
-        if n_exc >= 3:
-            # Tre eccezioni di fila (rete/timeout): le righe successive
-            # fallirebbero uguale dopo aver pagato caption e immagine AI.
-            # Le righe cadute per un problema di rete restano in coda (non pubblicate).
-            n_done -= n_exc
-            print("FB_BLOCKED Errore ripetuto di connessione verso Facebook: esecuzione interrotta senza tentare le righe restanti.")
+            continue
+        print(f"POST_ERR riga {i}: {msg}")
+        # Errore fatale (app bloccata, token/permessi): le righe rimanenti
+        # fallirebbero identiche, quindi ci fermiamo senza bruciare altri token AI.
+        _f = fb_fatal(err)
+        if _f:
             fatal_hit = True
+            # La riga torna in coda SOLO se la causa e' globale: qui Meta ci ha risposto con un
+            # errore esplicito, quindi sappiamo che il post non e' partito. Se invece la causa
+            # puo' essere la riga stessa (368/200) la si lascia consumata, altrimenti il job
+            # resterebbe bloccato su di essa a ogni esecuzione.
+            rimessa = 1 if fb_globale(err) else 0
+            n_done -= rimessa
+            print("FB_BLOCKED " + _f)
+            _rest = len(indices) - k - 1 + rimessa
+            if _rest > 0:
+                print(f"(interrotto: {_rest} righe non tentate)")
             break
+    except Exception as e:
+        # NB: un'eccezione (timeout, connessione caduta) lascia l'esito INCERTO: Meta puo' aver
+        # gia' accettato il post. La riga resta quindi consumata, perche' ripubblicare un
+        # doppione sulla pagina del cliente e' peggio che saltare una riga.
+        print(f"POST_ERR riga {i}: " + " ".join(str(e).split())[:200])
+    n_bad += 1
+    if n_bad >= 3:
+        # Tre fallimenti di fila (rete giu', rate limit, 5xx): le righe successive
+        # fallirebbero uguale dopo aver pagato caption e immagine AI.
+        print("FB_BLOCKED Errori ripetuti verso Facebook: esecuzione interrotta senza tentare le righe restanti.")
+        fatal_hit = True
+        break
 
 print(f"\nRIEPILOGO: {n_ok}/{n_done} pubblicati su {biz_name}")
 print(f"ROWS_DONE {n_done}")   # righe TENTATE: il server avanza il cursore di questo
@@ -510,29 +530,26 @@ try:
         page.goto(url, wait_until="networkidle", timeout=45000)
         site_title = (page.title() or "").strip()
         # Ogni blocco di testo viene abbinato all'immagine della SUA scheda: risale fino a 5
-        # antenati e si ferma al primo contenitore che contiene immagini. Tre regole evitano
-        # l'errore classico (la foto della PRIMA scheda finita su tutti i testi della lista):
-        #   - PIU' immagini E piu' di 2 testi lunghi = lista/griglia di schede, non una scheda:
-        #     nessuna immagine (a valle entra la rotazione, che almeno da' varieta'). Servono
-        #     entrambe le condizioni: una scheda ricca ha molti testi ma UNA sola foto, una
-        #     galleria ha molte foto ma pochi testi.
-        #   - i candidati con logo/icon/badge/sprite nel src, alt o class sono scartati subito;
-        #   - fra i rimasti vince il piu' GRANDE, misurato anche col riquadro di layout perche'
-        #     le immagini in lazy-load hanno naturalWidth 0 finche' non entrano nello schermo.
+        # antenati e si ferma al primo contenitore che contiene immagini utilizzabili.
+        # Due sole regole, entrambe MISURATE su strutture reali con un browser vero:
+        #   - si scartano i candidati con logo/favicon/icon/sprite/brand/header nel src, alt o
+        #     class. La lista e' identica a LOGO_KW piu' sotto: se qui si scartasse un'immagine
+        #     che il Python considera buona, quella finirebbe in "good" e la rotazione la
+        #     assegnerebbe a un testo DIVERSO (immagine sbagliata invece di nessuna immagine).
+        #   - fra i rimasti vince il piu' GRANDE, preferendo quelli visibili: le immagini in
+        #     lazy-load hanno naturalWidth 0 finche' non entrano nello schermo, mentre le slide
+        #     nascoste di un carosello hanno il riquadro di layout a 0.
+        # NON si prova a riconoscere "questo contenitore e' una lista": tentato due volte e
+        # misurato peggio (13/32 e 26/32 abbinamenti corretti contro i 28/32 di questa versione).
+        # Il motivo e' che rinunciare NON e' neutro: a valle entra la rotazione su "good", che
+        # inizia con og:image e quindi assegna al testo la foto di un altro contenuto.
         pairs = page.evaluate("""() => {
           const out = [];
           const els = document.querySelectorAll('h1,h2,h3,p,li');
-          const ICONA = /logo|favicon|icon|sprite|badge|placeholder/i;
+          const ICONA = /logo|favicon|icon|sprite|brand|header/i;
           const area = (x) => {
             const r = x.getBoundingClientRect();
             return Math.max((x.naturalWidth || 0) * (x.naturalHeight || 0), (r.width || 0) * (r.height || 0));
-          };
-          const cache = new Map();
-          const contaTesti = (n) => {
-            if (!cache.has(n)) {
-              cache.set(n, [...n.querySelectorAll('h1,h2,h3,p,li')].filter(x => (x.innerText || '').trim().length > 40).length);
-            }
-            return cache.get(n);
           };
           for (const e of els) {
             const t = (e.innerText || '').trim();
@@ -543,10 +560,11 @@ try:
               if (!node || node === document.body) break;
               const tutte = [...node.querySelectorAll('img')].filter(x => x.currentSrc || x.src);
               if (!tutte.length) continue;
-              if (tutte.length > 1 && contaTesti(node) > 2) break;
               const cands = tutte.filter(x => !ICONA.test((x.className || '') + ' ' + (x.alt || '') + ' ' + (x.currentSrc || x.src || '')));
-              if (!cands.length) break;
-              im = cands.reduce((a, b) => (area(b) > area(a) ? b : a));
+              if (!cands.length) continue;
+              const visibili = cands.filter(x => x.getBoundingClientRect().width > 0);
+              const scelta = visibili.length ? visibili : cands;
+              im = scelta.reduce((a, b) => (area(b) > area(a) ? b : a));
               break;
             }
             out.push({

@@ -19,8 +19,11 @@ import { getPriceMap, FALLBACK_BASE_OUT } from "./pricing";
 
 // UNA SOLA scala per tutta la mappa: peso = prezzo output $/M diviso il riferimento $1.5/M,
 // cioe' la stessa formula che chargeUser applica ai prezzi live (prezzi da
-// docs/openrouter-models.md). Mescolare due scale faceva pagare i modelli vecchi piu' di
-// quelli nuovi, che costano il doppio.
+// docs/openrouter-models.md).
+// ATTENZIONE a cosa cambia davvero: per gli utenti (chargeUser) questa mappa e' solo la RETE
+// DI SICUREZZA per i modelli assenti dal listino prezzi; finche' il listino live risponde, la
+// tariffa la detta il prezzo reale e questi numeri non vengono nemmeno letti. Dove invece
+// contano sempre e' chargeAgent/totalCredits.
 export const MODEL_WEIGHTS: Record<string, number> = {
   "google/gemini-3.1-flash-lite": 1, // $1.50/M out
   "openai/text-embedding-3-small": 1, // non in listino: tenuto a 1
