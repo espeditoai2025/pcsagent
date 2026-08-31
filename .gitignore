@@ -32,3 +32,13 @@ fatturato.txt
 # Sottocartelle locali (gestite separatamente)
 ai-agent-backend/
 frontend-dashboard/
+
+# Bytecode Python dei tool temporanei
+__pycache__/
+*.pyc
+
+# Script diagnostici usa-e-getta (possono contenere credenziali)
+check_logo.py
+
+# Lock runtime di Claude Code (le eventuali impostazioni in .claude/ restano committabili)
+.claude/scheduled_tasks.lock
