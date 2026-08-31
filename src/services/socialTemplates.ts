@@ -470,9 +470,12 @@ for k, i in enumerate(indices):
             fatal_hit = True
             break
 
-print(f"\nRIEPILOGO: {n_ok}/{len(indices)} pubblicati su {biz_name}")
+print(f"\nRIEPILOGO: {n_ok}/{n_done} pubblicati su {biz_name}")
+print(f"ROWS_DONE {n_done}")   # righe TENTATE: il server avanza il cursore di questo
 print(f"AI_USAGE {USAGE['p']} {USAGE['c']} {ai_model}")
-sys.exit(0 if n_ok > 0 else 1)
+# Un errore FATALE deve far uscire con 1 ANCHE se qualche riga era gia' partita:
+# altrimenti il server marca l'esecuzione come OK e butta via la spiegazione.
+sys.exit(0 if (n_ok > 0 and not fatal_hit) else 1)
 `;
 
 /**
