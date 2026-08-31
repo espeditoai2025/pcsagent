@@ -68,7 +68,7 @@ export async function routerModelName(prisma: PrismaClient): Promise<string> {
  * Modello "occhi" per LEGGERE le immagini allegate (deve essere multimodale).
  * Quando l'utente allega un'immagine, questo modello la converte in testo per il resto
  * dell'agente (serviva ai modelli solo-testo; con i gradi GPT-5.6, tutti multimodali, resta come rete di sicurezza).
- * Configurabile dall'admin via Setting "vision_model"; default: Gemini flash-lite (economico).
+ * Configurabile dall'admin via Setting "vision_model"; default: gpt-5.6-luna (multimodale, economico).
  */
 export const VISION_DEFAULT = "openai/gpt-5.6-luna";
 
@@ -84,7 +84,7 @@ export async function visionModelName(prisma: PrismaClient): Promise<string> {
 
 /**
  * Modello per la GENERAZIONE di immagini (deve produrre immagini in output).
- * Configurabile dall'admin via Setting "image_model"; default: Gemini Flash Image.
+ * Configurabile dall'admin via Setting "image_model"; default: gemini-3.1-flash-lite-image.
  */
 export const IMAGE_DEFAULT = "google/gemini-3.1-flash-lite-image";
 

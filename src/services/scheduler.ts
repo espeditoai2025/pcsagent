@@ -101,9 +101,14 @@ async function runJob(prisma: PrismaClient, job: any, opts: { preview?: boolean 
       const normUrl = (u: string) => u.trim().toLowerCase().replace(/^https?:\/\//, "").replace(/\/+$/, "");
       const urls = String(job.sourceRef || "").split(/[\s,;]+/).map((u) => u.trim()).filter(Boolean).slice(0, 5);
       let items = await prisma.scrapedItem.findMany({ where: { scheduledJobId: job.id }, orderBy: { createdAt: "asc" } });
+      // Le righe con content VUOTO sono SEGNAPOSTO: registrano che un URL e' gia' stato
+      // scansionato anche quando non ha prodotto contenuti. Non si pubblicano mai.
+      const usableOf = (rows: typeof items) => rows.filter((x) => (x.content || "").trim());
 
       // URL cambiati dopo l'ultima scansione? Butta la cache e ri-scansiona da zero.
-      if (items.length > 0) {
+      // Solo se un elenco di URL c'e' davvero: un sourceRef svuotato per errore dal pannello
+      // non deve cancellare i contenuti gia' estratti.
+      if (items.length > 0 && urls.length > 0) {
         const scanned = new Set(items.map((x) => normUrl(x.sourceUrl || "")));
         const wanted = new Set(urls.map(normUrl));
         const changed = [...wanted].some((u) => !scanned.has(u)) || [...scanned].some((u) => !wanted.has(u));
@@ -114,34 +119,76 @@ async function runJob(prisma: PrismaClient, job: any, opts: { preview?: boolean 
         }
       }
 
-      if (items.length === 0) {
-        let lastOut = "";
-        for (const u of urls) {
-          const scrape = await executePythonScript(WEBSITE_SCRAPE_SCRIPT, { env: { SCRAPE_URL: u }, workspace: job.userId });
-          lastOut = (scrape.output || scrape.error || "").slice(0, 200);
-          const m = (scrape.output || "").match(/SCRAPE_JSON (.+)/);
-          if (!m) continue;
+      // Quali URL vanno (ri)scansionati: quelli senza contenuti utilizzabili. Un URL gia'
+      // provato ha il suo segnaposto e NON si ritenta subito (altrimenti si ri-scansiona a
+      // ogni run), ma dopo 24h si', cosi' un sito momentaneamente giu' rientra da solo.
+      const RISCANSIONE_MS = 24 * 3600_000;
+      const adesso = Date.now();
+      const perUrl = new Map<string, { utili: number; ultimo: number; ids: string[] }>();
+      for (const x of items) {
+        const k = normUrl(x.sourceUrl || "");
+        const e = perUrl.get(k) || { utili: 0, ultimo: 0, ids: [] };
+        if ((x.content || "").trim()) e.utili++;
+        e.ultimo = Math.max(e.ultimo, x.createdAt.getTime());
+        e.ids.push(x.id);
+        perUrl.set(k, e);
+      }
+      const daScansionare = urls.filter((u) => {
+        const e = perUrl.get(normUrl(u));
+        return !e || (e.utili === 0 && adesso - e.ultimo > RISCANSIONE_MS);
+      });
+
+      let lastOut = "";
+      if (daScansionare.length > 0) {
+        // Via i segnaposto scaduti dei soli URL che stiamo per ri-scansionare: i contenuti
+        // degli altri URL restano dove sono.
+        const vecchi = daScansionare.flatMap((u) => perUrl.get(normUrl(u))?.ids || []);
+        if (vecchi.length > 0) await prisma.scrapedItem.deleteMany({ where: { id: { in: vecchi } } });
+        // Le pagine si scansionano in PARALLELO: dockerService ha gia' il suo semaforo, in
+        // sequenza il costo era la SOMMA dei timeout di navigazione (45s l'uno, fino a 5 URL).
+        const scrapes = await Promise.all(
+          daScansionare.map(async (u) => ({ u, res: await executePythonScript(WEBSITE_SCRAPE_SCRIPT, { env: { SCRAPE_URL: u }, workspace: job.userId }) }))
+        );
+        for (const { u, res } of scrapes) {
+          lastOut = (res.output || res.error || "").slice(0, 200);
+          const m = (res.output || "").match(/SCRAPE_JSON (.+)/);
+          let arr: any[] = [];
           try {
-            const arr = JSON.parse(m[1]);
-            if (Array.isArray(arr) && arr.length) {
-              await prisma.scrapedItem.createMany({
-                data: arr.slice(0, 30).map((x: any) => ({
-                  scheduledJobId: job.id,
-                  title: String(x.title || "").slice(0, 200) || null,
-                  content: String(x.content || "").slice(0, 2000),
-                  imageUrl: String(x.imageUrl || "").slice(0, 1000) || null,
-                  sourceUrl: String(x.sourceUrl || u).slice(0, 1000),
-                })),
-              });
-            }
+            const parsed = m ? JSON.parse(m[1]) : null;
+            if (Array.isArray(parsed)) arr = parsed;
           } catch { /* JSON non valido */ }
+          const rows = arr
+            .slice(0, 30)
+            .map((x: any) => ({
+              scheduledJobId: job.id,
+              title: String(x.title || "").slice(0, 200) || null,
+              content: String(x.content || "").slice(0, 2000),
+              imageUrl: String(x.imageUrl || "").slice(0, 1000) || null,
+              sourceUrl: String(x.sourceUrl || u).slice(0, 1000),
+            }))
+            .filter((r) => r.content.trim());
+          // Segnaposto per un URL che non ha dato nulla: senza, il confronto qui sopra lo
+          // vedrebbe come "URL nuovo" a OGNI esecuzione e ri-scansionerebbe tutto il sito
+          // azzerando il cursore (stesso post ripubblicato all'infinito).
+          if (rows.length === 0) {
+            rows.push({ scheduledJobId: job.id, title: null, content: "", imageUrl: null, sourceUrl: String(u).slice(0, 1000) });
+          }
+          // FUORI dal catch del JSON: un errore di scrittura sul DB non e' un problema di
+          // scraping e non va mascherato da "nessun contenuto trovato".
+          await prisma.scrapedItem.createMany({ data: rows });
         }
         items = await prisma.scrapedItem.findMany({ where: { scheduledJobId: job.id }, orderBy: { createdAt: "asc" } });
-        if (items.length === 0) {
-          throw new Error("Scraping del sito non riuscito o nessun contenuto trovato. " + lastOut);
-        }
       }
-      const it = items[(job.cursor || 0) % items.length];
+
+      const usable = usableOf(items);
+      if (usable.length === 0) {
+        throw new Error(
+          daScansionare.length > 0
+            ? "Scraping del sito non riuscito o nessun contenuto trovato. " + lastOut
+            : "L'ultima scansione del sito non ha trovato contenuti utilizzabili; verra' ritentata entro 24 ore. Controlla che l'indirizzo sia giusto e che le pagine abbiano del testo."
+        );
+      }
+      const it = usable[(job.cursor || 0) % usable.length];
       env.WEB_TITLE = it.title || "";
       env.WEB_CONTENT = it.content || "";
       env.WEB_IMAGE = it.imageUrl || "";
@@ -149,7 +196,7 @@ async function runJob(prisma: PrismaClient, job: any, opts: { preview?: boolean 
       // la copertina) e l'AI è attiva, lo script genera un'immagine AI diversa per ogni post.
       const isLogoUrl = (u: string) => /logo|favicon|icon|sprite|brand/i.test(u || "");
       const distinctImgs = new Set(
-        items.map((x) => (x.imageUrl || "").trim()).filter((u) => /^https?:\/\//i.test(u) && !isLogoUrl(u))
+        usable.map((x) => (x.imageUrl || "").trim()).filter((u) => /^https?:\/\//i.test(u) && !isLogoUrl(u))
       );
       env.FEW_SITE_IMAGES = distinctImgs.size <= 1 ? "true" : "false";
     }
@@ -177,7 +224,8 @@ async function runJob(prisma: PrismaClient, job: any, opts: { preview?: boolean 
           return { caption: String(d.caption || ""), image: String(d.image || "") };
         } catch { /* json non valido */ }
       }
-      throw new Error("Anteprima non riuscita: " + ((result.output || result.error || "").slice(0, 300)));
+      // Anche l'anteprima passa dal traduttore: e' l'ultimo punto che mostrava il log grezzo.
+      throw new Error("Anteprima non riuscita: " + friendlyError(result.error || result.output).slice(0, 300));
     }
 
     const rawOut = result.output || "";
@@ -186,7 +234,23 @@ async function runJob(prisma: PrismaClient, job: any, opts: { preview?: boolean 
     // Errore FATALE (app bloccata, token morto): puo' arrivare DOPO che qualche riga e'
     // gia' partita, quindi non basta guardare l'exit code o la presenza di POST_OK.
     const fatal = /^FB_BLOCKED[ 	]+/m.test(rawOut);
-    const ok = result.success && published && !fatal;
+    const okCount = (rawOut.match(/^POST_OK\b/gm) || []).length;
+    const doneM = rawOut.match(/^ROWS_DONE (\d+)$/m);
+    // Di quante righe far avanzare il cursore. Tre situazioni diverse, NON confondibili:
+    //  1) ROWS_DONE c'e' -> lo script ha finito il ciclo e dice lui quante righe ha tentato;
+    //  2) NESSUN log (dockerService va in timeout a 5 min o in eccezione: ritorna output "")
+    //     -> il container e' stato ucciso e non sappiamo quanti post erano gia' partiti su
+    //     Facebook: si avanza di postsPerRun, perche' ripubblicare doppioni e' peggio che
+    //     saltare una riga;
+    //  3) log presente ma senza ROWS_DONE -> lo script e' morto prima o dentro il ciclo
+    //     (preflight FB_BLOCKED, fonte dati illeggibile, OOM kill): si avanza SOLO dei post
+    //     di cui c'e' la prova nel log, quindi 0 se non ne e' uscito nessuno.
+    const noLog = !rawOut.trim();
+    const attempted = doneM ? Math.max(0, parseInt(doneM[1], 10)) : noLog ? job.postsPerRun || 1 : okCount;
+    // Batch parziale: lo script esce 0 con UNA sola riga pubblicata su tante, e senza questo
+    // controllo la scheda direbbe "OK" anche con la maggior parte dei post non usciti.
+    const partial = !!doneM && okCount > 0 && okCount < attempted;
+    const ok = result.success && published && !fatal && !partial;
 
     // Gli ID dei post pubblicati vanno salvati anche se il run e' finito in errore:
     // quei post ESISTONO su Facebook e servono all'auto-risposta ai commenti.
@@ -209,15 +273,16 @@ async function runJob(prisma: PrismaClient, job: any, opts: { preview?: boolean 
       },
     });
 
-    // Il cursore avanza solo delle righe REALMENTE tentate: se lo script si e' fermato
-    // a meta' batch, le righe non tentate devono restare in coda (prima venivano saltate
-    // per sempre perche' il cursore avanzava comunque di tutto postsPerRun).
-    const doneM = rawOut.match(/^ROWS_DONE (\d+)$/m);
-    const attempted = doneM ? Math.max(0, parseInt(doneM[1], 10)) : (job.postsPerRun || 1);
+    // Il cursore avanza solo delle righe REALMENTE tentate (vedi "attempted" sopra): se lo
+    // script si e' fermato a meta' batch, le righe non tentate devono restare in coda.
+    // WEBSITE: 1 contenuto per volta, ma su un errore FATALE (app/token: nessun contenuto
+    // sarebbe potuto uscire) si resta fermi. Sugli altri errori si avanza lo stesso, altrimenti
+    // un singolo contenuto che Facebook rifiuta sempre bloccherebbe il job per sempre.
+    const passoWebsite = fatal ? 0 : 1;
     const nextCursor =
       job.selectionMode === "RANDOM"
         ? Math.floor(Math.random() * 100000)
-        : (job.cursor || 0) + (job.sourceType === "WEBSITE" ? 1 : attempted); // WEBSITE: 1 contenuto/post per volta
+        : (job.cursor || 0) + (job.sourceType === "WEBSITE" ? passoWebsite : attempted);
 
     await prisma.scheduledJob.update({
       where: { id: job.id },
@@ -225,7 +290,11 @@ async function runJob(prisma: PrismaClient, job: any, opts: { preview?: boolean 
         lastRunAt: new Date(),
         lastStatus: ok ? "OK" : "ERROR",
         // Messaggio leggibile per la scheda; l'output grezzo resta in scheduledJobRun.error.
-        lastError: ok ? null : friendlyError(result.error || out).slice(0, 500),
+        lastError: ok
+          ? null
+          : partial && !fatal
+            ? `Pubblicati solo ${okCount} post su ${attempted}: le altre righe non sono uscite (dettagli nell'ultima esecuzione).`
+            : friendlyError(result.error || out).slice(0, 500),
         // NB: friendlyError non tronca piu' da solo -> qui vale davvero il limite 500.
         cursor: nextCursor,
         nextRunAt: computeNextRun(job.cronExpression, job.timezone),

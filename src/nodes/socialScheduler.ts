@@ -137,7 +137,24 @@ Il token è GIÀ configurato e l'utente può amministrare PIÙ pagine.
         const canPost = perms.includes("pages_manage_posts");
         L.push(`• ${s.name}: ✅ token valido · ${pgs.length} pagine` + (canPost ? " · può pubblicare" : " · ⚠️ NON può pubblicare (manca `pages_manage_posts`)"));
       } catch (e: any) {
-        L.push(`• ${s.name}: ⚠️ ${friendlyError(String(e?.message || "")).slice(0, 200)}`);
+        // Qui l'input NON e' il log del container ma il messaggio di UNA chiamata Graph.
+        // em gia' trimmato: friendlyError trima l'input, quindi senza questo il confronto
+        // "ha riconosciuto qualcosa?" sarebbe vero anche solo per uno spazio di differenza.
+        const em = String(e?.message || "").trim();
+        const fe = friendlyError(em);
+        // La frase "rigenera il token" si dice solo se l'errore parla davvero del token:
+        // listFacebookPages lancia anche per rete giu', rate limit e 5xx di Meta, e mandare a
+        // rigenerare un token valido e' una diagnosi falsa (lo stesso motivo per cui
+        // socialErrors.ts non indovina piu' le cause).
+        const tokenKO = /oauth|access token|session|expired|scadut|permission|pages_manage|\b190\b|\b102\b/i.test(em);
+        L.push(
+          `• ${s.name}: ⚠️ ` +
+            (fe !== em
+              ? fe.slice(0, 200)
+              : tokenKO
+                ? `token non valido o scaduto → rigeneralo dal Profilo (${em.slice(0, 70)})`
+                : `controllo non riuscito, Facebook non risponde come dovrebbe (${em.slice(0, 90)})`)
+        );
       }
     }
     const jobs = await prisma.scheduledJob.findMany({ where: { userId }, orderBy: { updatedAt: "desc" } });
@@ -147,7 +164,14 @@ Il token è GIÀ configurato e l'utente può amministrare PIÙ pagine.
     } else {
       const failed = jobs.filter((j) => j.lastStatus === "ERROR");
       L.push(`• ${jobs.length} totali · ${jobs.filter((j) => j.status === "ACTIVE").length} attive · ${failed.length} con errore.`);
-      for (const j of failed) L.push(`   ❌ "${j.name}" (${j.fbPageName || "pagina"}): ${j.lastError || "errore sconosciuto"}`);
+      // friendlyError anche qui: i job andati in errore PRIMA di questo deploy hanno in DB il
+      // log tecnico grezzo. Gli a-capo vanno tolti (spezzerebbero l'elenco puntato) e il taglio
+      // sta a 300 perche' la spiegazione piu' lunga (app bloccata da Meta, ~290 caratteri)
+      // contiene le istruzioni operative e non deve arrivare mozzata.
+      for (const j of failed) {
+        const t = friendlyError(j.lastError).replace(/\s*\r?\n\s*/g, " ");
+        L.push(`   ❌ "${j.name}" (${j.fbPageName || "pagina"}): ${t.length > 300 ? t.slice(0, 300) + "…" : t}`);
+      }
     }
     const missing: string[] = [];
     for (const j of jobs) {
@@ -307,10 +331,21 @@ Il token è GIÀ configurato e l'utente può amministrare PIÙ pagine.
       const um = (result.output || "").match(/AI_USAGE (\d+) (\d+) (\S+)/);
       if (um) await chargeUser(prisma, userId, [{ model: um[3], prompt: parseInt(um[1], 10), completion: parseInt(um[2], 10) }], "social").catch(() => {});
       const out = (result.output || "").trim();
-      if (result.success && out.includes("POST_OK")) {
+      const fatal = /^FB_BLOCKED[ \t]+/m.test(out);
+      if (result.success && out.includes("POST_OK") && !fatal) {
         return { finalResult: `✅ Post di test pubblicato sulla pagina **${target.name}**!\n\nControllala per vederlo. Se è ok, dimmi come programmare le pubblicazioni automatiche (es. "ogni giorno alle 9 un prodotto dal mio Google Sheet su ${target.name}").` };
       }
-      const errLine = out.split("\n").find((l) => l.startsWith("ERRORE")) || result.error || out || "errore sconosciuto";
+      // Stessa spiegazione leggibile della scheda del pannello: friendlyError riconosce la
+      // riga FB_BLOCKED; se non riconosce nulla ritorna l'input, e allora si ripiega sulla
+      // riga "ERRORE ..." dello script invece di riversare in chat il log del container.
+      // raw gia' trimmato: friendlyError trima l'input, quindi senza questo il confronto sarebbe
+      // sempre "diverso" (result.error finisce con un a-capo) e in chat finirebbe l'intero log.
+      const raw = (result.error || out || "errore sconosciuto").trim();
+      const friendly = friendlyError(raw);
+      // Il ripiego accetta anche POST_ERR: nelle modalita' con fonte dati il fallimento di una
+      // riga si stampa cosi' e non esiste nessuna riga "ERRORE ...".
+      const riga = out.split("\n").map((l) => l.trim()).find((l) => l.startsWith("ERRORE") || l.startsWith("POST_ERR"));
+      const errLine = friendly !== raw ? friendly : riga || raw.slice(0, 500);
       return { finalResult: `❌ Pubblicazione di test non riuscita sulla pagina **${target.name}**.\n\n${errLine}` };
     } catch (e: any) {
       return { finalResult: `Errore durante il test: ${e.message}` };

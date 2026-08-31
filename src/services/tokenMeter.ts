@@ -17,18 +17,20 @@ import { getPriceMap, FALLBACK_BASE_OUT } from "./pricing";
  * per token rispetto a un modello economico. Regolabili in base ai prezzi reali OpenRouter.
  */
 
+// UNA SOLA scala per tutta la mappa: peso = prezzo output $/M diviso il riferimento $1.5/M,
+// cioe' la stessa formula che chargeUser applica ai prezzi live (prezzi da
+// docs/openrouter-models.md). Mescolare due scale faceva pagare i modelli vecchi piu' di
+// quelli nuovi, che costano il doppio.
 export const MODEL_WEIGHTS: Record<string, number> = {
-  "google/gemini-3.1-flash-lite": 1,
-  "openai/text-embedding-3-small": 1,
-  "perplexity/sonar": 5,
-  "openai/gpt-5.4-mini": 10,
-  "anthropic/claude-opus-4.6": 60,
-  // Nuova scala (2026-08): peso = prezzo output $/M diviso il riferimento $1.5/M,
-  // cioe' la stessa formula che chargeUser applica ai prezzi live.
-  "openai/gpt-5.6-luna": 1, // $1.20/M out
-  "openai/gpt-5.6-sol": 7, // $10/M out
-  "openai/gpt-5.6-sol-pro": 7, // stesso prezzo di sol (reasoning "pro" = piu' token, non tariffa piu' alta)
-  "anthropic/claude-opus-5": 17, // $25/M out
+  "google/gemini-3.1-flash-lite": 1, // $1.50/M out
+  "openai/text-embedding-3-small": 1, // non in listino: tenuto a 1
+  "perplexity/sonar": 1, // non in listino: tenuto a 1 (era 5 sulla vecchia scala)
+  "openai/gpt-5.4-mini": 3, // $4.50/M out
+  "anthropic/claude-opus-4.6": 16.67, // $25/M out
+  "openai/gpt-5.6-luna": 0.8, // $1.20/M out
+  "openai/gpt-5.6-sol": 6.67, // $10/M out
+  "openai/gpt-5.6-sol-pro": 6.67, // stesso prezzo di sol (reasoning "pro" = piu' token, non tariffa piu' alta)
+  "anthropic/claude-opus-5": 16.67, // $25/M out
   "google/gemini-3.1-flash-lite-image": 1, // $1.50/M out
 };
 export const DEFAULT_WEIGHT = 5;
@@ -100,9 +102,17 @@ export async function chargeUser(
   // NB: NON normalizzare sul "modello base" corrente: se il base è economico (es. DeepSeek
   // a $0.20/M) i modelli costosi verrebbero gonfiati (Opus 125x invece di ~17x) e il saldo
   // crollerebbe. Con riferimento fisso la scala dei crediti resta stabile e coerente coi prezzi.
+  // Se il modello NON e' nel listino (fetch live non raggiungibile e archivio piu' vecchio del
+  // modello) si usa MODEL_WEIGHTS, non il riferimento: altrimenti ogni modello nuovo verrebbe
+  // addebitato come il piu' economico (il grado "Massimo" a 1/7 del dovuto, senza nessun errore).
   const priceMap = await getPriceMap();
   const baseOut = FALLBACK_BASE_OUT;
-  const weightOf = (model: string) => (priceMap[model]?.outP || baseOut) / baseOut;
+  const weightOf = (model: string) => {
+    const p = priceMap[model];
+    // Modello NEL listino: prezzo reale (con outP 0/mancante vale il riferimento, come prima).
+    // Modello ASSENTE dal listino: MODEL_WEIGHTS, non il riferimento.
+    return p ? (p.outP || baseOut) / baseOut : weightFor(model);
+  };
 
   const byModel: Record<string, { prompt: number; completion: number; credits: number }> = {};
   let total = 0;

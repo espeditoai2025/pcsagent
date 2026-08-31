@@ -450,13 +450,17 @@ for k, i in enumerate(indices):
             print(f"POST_OK riga {i} (id {msg}): " + " ".join(caption[:70].split()))
         else:
             print(f"POST_ERR riga {i}: {msg}")
+            n_exc = 0   # fallimento SENZA eccezione: la catena di errori di rete si interrompe qui
             # Errore fatale (app bloccata, token/permessi): le righe rimanenti
             # fallirebbero identiche, quindi ci fermiamo senza bruciare altri token AI.
             _f = fb_fatal(err)
             if _f:
                 fatal_hit = True
+                # Questa riga NON e' stata pubblicata e la causa e' esterna: scalarla dal
+                # conteggio, altrimenti il server fa avanzare il cursore e la salta.
+                n_done -= 1
                 print("FB_BLOCKED " + _f)
-                _rest = len(indices) - k - 1
+                _rest = len(indices) - k
                 if _rest > 0:
                     print(f"(interrotto: {_rest} righe non tentate)")
                 break
@@ -466,6 +470,8 @@ for k, i in enumerate(indices):
         if n_exc >= 3:
             # Tre eccezioni di fila (rete/timeout): le righe successive
             # fallirebbero uguale dopo aver pagato caption e immagine AI.
+            # Le righe cadute per un problema di rete restano in coda (non pubblicate).
+            n_done -= n_exc
             print("FB_BLOCKED Errore ripetuto di connessione verso Facebook: esecuzione interrotta senza tentare le righe restanti.")
             fatal_hit = True
             break
@@ -475,6 +481,8 @@ print(f"ROWS_DONE {n_done}")   # righe TENTATE: il server avanza il cursore di q
 print(f"AI_USAGE {USAGE['p']} {USAGE['c']} {ai_model}")
 # Un errore FATALE deve far uscire con 1 ANCHE se qualche riga era gia' partita:
 # altrimenti il server marca l'esecuzione come OK e butta via la spiegazione.
+# NB: un batch PARZIALE (es. 1 pubblicato su 5) esce comunque 0; e' il server a
+# confrontare i POST_OK con ROWS_DONE e a segnare la scheda come ERRORE.
 sys.exit(0 if (n_ok > 0 and not fatal_hit) else 1)
 `;
 
@@ -501,11 +509,31 @@ try:
         page = browser.new_page(user_agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/120.0 Safari/537.36")
         page.goto(url, wait_until="networkidle", timeout=45000)
         site_title = (page.title() or "").strip()
-        # Ogni blocco di testo viene abbinato all'immagine PIU VICINA nel DOM (stessa scheda
-        # prodotto/sezione): risale fino a 5 antenati e prende la prima img del contenitore.
+        # Ogni blocco di testo viene abbinato all'immagine della SUA scheda: risale fino a 5
+        # antenati e si ferma al primo contenitore che contiene immagini. Tre regole evitano
+        # l'errore classico (la foto della PRIMA scheda finita su tutti i testi della lista):
+        #   - PIU' immagini E piu' di 2 testi lunghi = lista/griglia di schede, non una scheda:
+        #     nessuna immagine (a valle entra la rotazione, che almeno da' varieta'). Servono
+        #     entrambe le condizioni: una scheda ricca ha molti testi ma UNA sola foto, una
+        #     galleria ha molte foto ma pochi testi.
+        #   - i candidati con logo/icon/badge/sprite nel src, alt o class sono scartati subito;
+        #   - fra i rimasti vince il piu' GRANDE, misurato anche col riquadro di layout perche'
+        #     le immagini in lazy-load hanno naturalWidth 0 finche' non entrano nello schermo.
         pairs = page.evaluate("""() => {
           const out = [];
           const els = document.querySelectorAll('h1,h2,h3,p,li');
+          const ICONA = /logo|favicon|icon|sprite|badge|placeholder/i;
+          const area = (x) => {
+            const r = x.getBoundingClientRect();
+            return Math.max((x.naturalWidth || 0) * (x.naturalHeight || 0), (r.width || 0) * (r.height || 0));
+          };
+          const cache = new Map();
+          const contaTesti = (n) => {
+            if (!cache.has(n)) {
+              cache.set(n, [...n.querySelectorAll('h1,h2,h3,p,li')].filter(x => (x.innerText || '').trim().length > 40).length);
+            }
+            return cache.get(n);
+          };
           for (const e of els) {
             const t = (e.innerText || '').trim();
             if (t.length <= 40) continue;
@@ -513,8 +541,13 @@ try:
             for (let i = 0; i < 5 && node; i++) {
               node = node.parentElement;
               if (!node || node === document.body) break;
-              const cand = node.querySelector('img');
-              if (cand && (cand.currentSrc || cand.src)) { im = cand; break; }
+              const tutte = [...node.querySelectorAll('img')].filter(x => x.currentSrc || x.src);
+              if (!tutte.length) continue;
+              if (tutte.length > 1 && contaTesti(node) > 2) break;
+              const cands = tutte.filter(x => !ICONA.test((x.className || '') + ' ' + (x.alt || '') + ' ' + (x.currentSrc || x.src || '')));
+              if (!cands.length) break;
+              im = cands.reduce((a, b) => (area(b) > area(a) ? b : a));
+              break;
             }
             out.push({
               text: t,
