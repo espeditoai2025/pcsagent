@@ -137,7 +137,7 @@ Il token è GIÀ configurato e l'utente può amministrare PIÙ pagine.
         const canPost = perms.includes("pages_manage_posts");
         L.push(`• ${s.name}: ✅ token valido · ${pgs.length} pagine` + (canPost ? " · può pubblicare" : " · ⚠️ NON può pubblicare (manca `pages_manage_posts`)"));
       } catch (e: any) {
-        L.push(`• ${s.name}: ⚠️ token non valido o scaduto → rigeneralo dal Profilo (${String(e.message || "").slice(0, 70)})`);
+        L.push(`• ${s.name}: ⚠️ ${friendlyError(String(e?.message || "")).slice(0, 200)}`);
       }
     }
     const jobs = await prisma.scheduledJob.findMany({ where: { userId }, orderBy: { updatedAt: "desc" } });
@@ -147,7 +147,7 @@ Il token è GIÀ configurato e l'utente può amministrare PIÙ pagine.
     } else {
       const failed = jobs.filter((j) => j.lastStatus === "ERROR");
       L.push(`• ${jobs.length} totali · ${jobs.filter((j) => j.status === "ACTIVE").length} attive · ${failed.length} con errore.`);
-      for (const j of failed) L.push(`   ❌ "${j.name}" (${j.fbPageName || "pagina"}): ${friendlyError(j.lastError)}`);
+      for (const j of failed) L.push(`   ❌ "${j.name}" (${j.fbPageName || "pagina"}): ${j.lastError || "errore sconosciuto"}`);
     }
     const missing: string[] = [];
     for (const j of jobs) {

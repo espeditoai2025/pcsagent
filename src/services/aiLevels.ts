@@ -6,9 +6,9 @@ import { PrismaClient } from "@prisma/client";
  * L'utente vede solo il grado (Base/Avanzato/Massimo), non il nome del modello.
  */
 export const DEFAULT_LEVEL_MODELS: Record<number, string> = {
-  1: "google/gemini-3.1-flash-lite", // Base — veloce/economico
-  2: "openai/gpt-5.4-mini", // Avanzato
-  3: "anthropic/claude-opus-4.8", // Massimo
+  1: "openai/gpt-5.6-luna", // Base — multimodale, pensato per chat ad alto volume
+  2: "openai/gpt-5.6-sol", // Avanzato — flagship GPT-5.6
+  3: "openai/gpt-5.6-sol-pro", // Massimo — stesso modello di sol con reasoning "pro"
 };
 
 export const LEVEL_LABELS: Record<number, string> = { 1: "Base", 2: "Avanzato", 3: "Massimo" };
@@ -46,7 +46,7 @@ export async function modelForLevel(prisma: PrismaClient, level: number | null |
  * ma costa pochissimo (output minuscolo). Override admin via Setting "router_model";
  * altrimenti usa il modello del livello "Avanzato" (configurabile in "ai_models").
  */
-export const ORCHESTRATOR_DEFAULT = "openai/gpt-5.4-mini";
+export const ORCHESTRATOR_DEFAULT = "openai/gpt-5.6-luna";
 
 export async function routerModelName(prisma: PrismaClient): Promise<string> {
   try {
@@ -67,10 +67,10 @@ export async function routerModelName(prisma: PrismaClient): Promise<string> {
 /**
  * Modello "occhi" per LEGGERE le immagini allegate (deve essere multimodale).
  * Quando l'utente allega un'immagine, questo modello la converte in testo per il resto
- * dell'agente (così i modelli solo-testo, es. DeepSeek, continuano a funzionare).
+ * dell'agente (serviva ai modelli solo-testo; con i gradi GPT-5.6, tutti multimodali, resta come rete di sicurezza).
  * Configurabile dall'admin via Setting "vision_model"; default: Gemini flash-lite (economico).
  */
-export const VISION_DEFAULT = "google/gemini-3.1-flash-lite";
+export const VISION_DEFAULT = "openai/gpt-5.6-luna";
 
 export async function visionModelName(prisma: PrismaClient): Promise<string> {
   try {
@@ -86,7 +86,7 @@ export async function visionModelName(prisma: PrismaClient): Promise<string> {
  * Modello per la GENERAZIONE di immagini (deve produrre immagini in output).
  * Configurabile dall'admin via Setting "image_model"; default: Gemini Flash Image.
  */
-export const IMAGE_DEFAULT = "google/gemini-3.1-flash-image-preview";
+export const IMAGE_DEFAULT = "google/gemini-3.1-flash-image";
 
 export async function imageModelName(prisma: PrismaClient): Promise<string> {
   try {

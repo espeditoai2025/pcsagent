@@ -165,7 +165,7 @@ async function runJob(prisma: PrismaClient, job: any, opts: { preview?: boolean 
     // Immagini generate con l'AI dentro il post: 10.000 token ciascuna
     const aiImgs = (result.output || "").match(/^\s*IMG_AI_GENERATED\s*$/gim);
     if (aiImgs && aiImgs.length) {
-      await chargeFlat(prisma, job.userId, 10000 * aiImgs.length, "google/gemini-3.1-flash-image-preview", "image").catch(() => {});
+      await chargeFlat(prisma, job.userId, 10000 * aiImgs.length, "google/gemini-3.1-flash-image", "image").catch(() => {});
     }
 
     // ANTEPRIMA: non pubblica, non scrive lo stato. Restituisce caption + immagine.
@@ -180,12 +180,18 @@ async function runJob(prisma: PrismaClient, job: any, opts: { preview?: boolean 
       throw new Error("Anteprima non riuscita: " + ((result.output || result.error || "").slice(0, 300)));
     }
 
-    const out = (result.output || "").slice(0, 2000);
-    const ok = result.success && out.includes("POST_OK");
+    const rawOut = result.output || "";
+    const out = rawOut.slice(0, 2000);
+    const published = rawOut.includes("POST_OK");
+    // Errore FATALE (app bloccata, token morto): puo' arrivare DOPO che qualche riga e'
+    // gia' partita, quindi non basta guardare l'exit code o la presenza di POST_OK.
+    const fatal = /^FB_BLOCKED[ 	]+/m.test(rawOut);
+    const ok = result.success && published && !fatal;
 
-    // Memorizza gli ID dei post pubblicati (servono all'auto-risposta ai commenti).
-    if (ok && job.socialAgentId) {
-      const ids = Array.from((result.output || "").matchAll(/\(id\s+([0-9_]+)\)/g)).map((m) => m[1]);
+    // Gli ID dei post pubblicati vanno salvati anche se il run e' finito in errore:
+    // quei post ESISTONO su Facebook e servono all'auto-risposta ai commenti.
+    if (published && job.socialAgentId) {
+      const ids = Array.from(rawOut.matchAll(/\(id\s+([0-9_]+)\)/g)).map((m) => m[1]);
       if (ids.length) {
         await prisma.publishedPost
           .createMany({ data: ids.map((fbPostId) => ({ socialAgentId: job.socialAgentId as string, fbPostId })), skipDuplicates: true })
@@ -203,10 +209,15 @@ async function runJob(prisma: PrismaClient, job: any, opts: { preview?: boolean 
       },
     });
 
+    // Il cursore avanza solo delle righe REALMENTE tentate: se lo script si e' fermato
+    // a meta' batch, le righe non tentate devono restare in coda (prima venivano saltate
+    // per sempre perche' il cursore avanzava comunque di tutto postsPerRun).
+    const doneM = rawOut.match(/^ROWS_DONE (\d+)$/m);
+    const attempted = doneM ? Math.max(0, parseInt(doneM[1], 10)) : (job.postsPerRun || 1);
     const nextCursor =
       job.selectionMode === "RANDOM"
         ? Math.floor(Math.random() * 100000)
-        : (job.cursor || 0) + (job.sourceType === "WEBSITE" ? 1 : (job.postsPerRun || 1)); // WEBSITE: 1 contenuto/post per volta
+        : (job.cursor || 0) + (job.sourceType === "WEBSITE" ? 1 : attempted); // WEBSITE: 1 contenuto/post per volta
 
     await prisma.scheduledJob.update({
       where: { id: job.id },
@@ -215,6 +226,7 @@ async function runJob(prisma: PrismaClient, job: any, opts: { preview?: boolean 
         lastStatus: ok ? "OK" : "ERROR",
         // Messaggio leggibile per la scheda; l'output grezzo resta in scheduledJobRun.error.
         lastError: ok ? null : friendlyError(result.error || out).slice(0, 500),
+        // NB: friendlyError non tronca piu' da solo -> qui vale davvero il limite 500.
         cursor: nextCursor,
         nextRunAt: computeNextRun(job.cronExpression, job.timezone),
       },
@@ -234,7 +246,7 @@ async function runJob(prisma: PrismaClient, job: any, opts: { preview?: boolean 
           data: {
             lastRunAt: new Date(),
             lastStatus: "ERROR",
-            lastError: friendlyError(String(e.message)).slice(0, 500),
+            lastError: friendlyError(String(e?.message ?? e ?? "")).slice(0, 500),
             nextRunAt: computeNextRun(job.cronExpression, job.timezone),
           },
         })

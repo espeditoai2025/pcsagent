@@ -5,7 +5,7 @@ import { SystemMessage } from "@langchain/core/messages";
 import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
-const IMAGE_MODEL = "google/gemini-3.1-flash-image-preview";
+const IMAGE_MODEL = "google/gemini-3.1-flash-image";
 const IMAGE_CREDITS = 10_000; // costo fisso per ogni immagine GENERATA con AI
 
 // Pattern che identificano un problema di INFRASTRUTTURA (non del codice generato):

@@ -47,7 +47,7 @@ pool_files = [f.strip() for f in os.environ.get("POOL_FILES", "").split(",") if 
 pool_index = int(os.environ.get("POOL_INDEX", "0") or "0")
 auto_image = os.environ.get("AUTO_IMAGE", "").strip().lower() == "true"
 image_context = os.environ.get("IMAGE_CONTEXT", "").strip()
-image_ai_model = os.environ.get("IMAGE_AI_MODEL", "").strip() or "google/gemini-3.1-flash-image-preview"
+image_ai_model = os.environ.get("IMAGE_AI_MODEL", "").strip() or "google/gemini-3.1-flash-image"
 preview_mode = os.environ.get("PREVIEW", "").strip().lower() == "true"
 few_site_images = os.environ.get("FEW_SITE_IMAGES", "").strip().lower() == "true"
 
@@ -107,7 +107,9 @@ try:
         _pre = fb_fatal(_err_of(_j), preflight=True)
 except Exception:
     pass
-if _pre:
+# L'anteprima non pubblica: un token/app inutilizzabile non deve impedirle di
+# mostrare la didascalia generata. Il blocco vale solo per la pubblicazione vera.
+if _pre and not preview_mode:
     print("FB_BLOCKED " + _pre)
     sys.exit(1)
 
@@ -431,27 +433,42 @@ if preview_mode:
 
 # 3b) Pubblica
 n_ok = 0
+fatal_hit = False
+n_done = 0          # righe effettivamente TENTATE (serve al cursore lato server)
+n_exc = 0           # eccezioni consecutive (rete giu': inutile insistere)
 for k, i in enumerate(indices):
+    n_done += 1
     try:
         caption, image_url = build_caption(df.iloc[i])
         img_url, img_file = resolve_image(image_url, caption)
         ok, msg, err = publish(caption, img_url, img_file)
         if ok:
             n_ok += 1
-            print(f"POST_OK riga {i} (id {msg}): {caption[:70]}")
+            n_exc = 0
+            # La didascalia va su UNA riga: il log e' anche un canale di segnalazione
+            # (FB_BLOCKED/POST_OK), un a-capo dentro il testo lo sporcherebbe.
+            print(f"POST_OK riga {i} (id {msg}): " + " ".join(caption[:70].split()))
         else:
             print(f"POST_ERR riga {i}: {msg}")
             # Errore fatale (app bloccata, token/permessi): le righe rimanenti
             # fallirebbero identiche, quindi ci fermiamo senza bruciare altri token AI.
             _f = fb_fatal(err)
             if _f:
+                fatal_hit = True
                 print("FB_BLOCKED " + _f)
                 _rest = len(indices) - k - 1
                 if _rest > 0:
                     print(f"(interrotto: {_rest} righe non tentate)")
                 break
     except Exception as e:
-        print(f"POST_ERR riga {i}: {e}")
+        print(f"POST_ERR riga {i}: " + " ".join(str(e).split())[:200])
+        n_exc += 1
+        if n_exc >= 3:
+            # Tre eccezioni di fila (rete/timeout): le righe successive
+            # fallirebbero uguale dopo aver pagato caption e immagine AI.
+            print("FB_BLOCKED Errore ripetuto di connessione verso Facebook: esecuzione interrotta senza tentare le righe restanti.")
+            fatal_hit = True
+            break
 
 print(f"\nRIEPILOGO: {n_ok}/{len(indices)} pubblicati su {biz_name}")
 print(f"AI_USAGE {USAGE['p']} {USAGE['c']} {ai_model}")

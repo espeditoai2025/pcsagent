@@ -23,6 +23,13 @@ export const MODEL_WEIGHTS: Record<string, number> = {
   "perplexity/sonar": 5,
   "openai/gpt-5.4-mini": 10,
   "anthropic/claude-opus-4.6": 60,
+  // Nuova scala (2026-08): peso = prezzo output $/M diviso il riferimento $1.5/M,
+  // cioe' la stessa formula che chargeUser applica ai prezzi live.
+  "openai/gpt-5.6-luna": 1, // $1.20/M out
+  "openai/gpt-5.6-sol": 7, // $10/M out
+  "openai/gpt-5.6-sol-pro": 7, // stesso prezzo di sol (reasoning "pro" = piu' token, non tariffa piu' alta)
+  "anthropic/claude-opus-5": 17, // $25/M out
+  "google/gemini-3.1-flash-image": 2, // $3/M out
 };
 export const DEFAULT_WEIGHT = 5;
 
