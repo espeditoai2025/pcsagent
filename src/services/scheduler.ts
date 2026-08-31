@@ -165,7 +165,7 @@ async function runJob(prisma: PrismaClient, job: any, opts: { preview?: boolean 
     // Immagini generate con l'AI dentro il post: 10.000 token ciascuna
     const aiImgs = (result.output || "").match(/^\s*IMG_AI_GENERATED\s*$/gim);
     if (aiImgs && aiImgs.length) {
-      await chargeFlat(prisma, job.userId, 10000 * aiImgs.length, "google/gemini-3.1-flash-image", "image").catch(() => {});
+      await chargeFlat(prisma, job.userId, 10000 * aiImgs.length, "google/gemini-3.1-flash-lite-image", "image").catch(() => {});
     }
 
     // ANTEPRIMA: non pubblica, non scrive lo stato. Restituisce caption + immagine.

@@ -29,7 +29,7 @@ export const MODEL_WEIGHTS: Record<string, number> = {
   "openai/gpt-5.6-sol": 7, // $10/M out
   "openai/gpt-5.6-sol-pro": 7, // stesso prezzo di sol (reasoning "pro" = piu' token, non tariffa piu' alta)
   "anthropic/claude-opus-5": 17, // $25/M out
-  "google/gemini-3.1-flash-image": 2, // $3/M out
+  "google/gemini-3.1-flash-lite-image": 1, // $1.50/M out
 };
 export const DEFAULT_WEIGHT = 5;
 

@@ -47,7 +47,7 @@ pool_files = [f.strip() for f in os.environ.get("POOL_FILES", "").split(",") if 
 pool_index = int(os.environ.get("POOL_INDEX", "0") or "0")
 auto_image = os.environ.get("AUTO_IMAGE", "").strip().lower() == "true"
 image_context = os.environ.get("IMAGE_CONTEXT", "").strip()
-image_ai_model = os.environ.get("IMAGE_AI_MODEL", "").strip() or "google/gemini-3.1-flash-image"
+image_ai_model = os.environ.get("IMAGE_AI_MODEL", "").strip() or "google/gemini-3.1-flash-lite-image"
 preview_mode = os.environ.get("PREVIEW", "").strip().lower() == "true"
 few_site_images = os.environ.get("FEW_SITE_IMAGES", "").strip().lower() == "true"
 
