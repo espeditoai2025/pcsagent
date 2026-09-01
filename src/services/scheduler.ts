@@ -193,7 +193,13 @@ async function runJob(prisma: PrismaClient, job: any, opts: { preview?: boolean 
           // essere ritentati subito, non fra 24 ore. Nemmeno l'anteprima lo scrive: un clic su
           // "Anteprima" mentre il sito e' lento non deve mettere in pausa il job per un giorno.
           if (rows.length === 0) {
-            if (!m || opts.preview) continue;
+            // Il segnaposto va scritto quando la scansione e' RIUSCITA ma la pagina non ha
+            // contenuti: lo script lo dice con SCRAPE_EMPTY. Un SCRAPE_ERR (timeout di
+            // navigazione, container ucciso) e' transitorio e va ritentato subito.
+            // Senza questo controllo il segnaposto non veniva mai scritto - lo script non
+            // stampa SCRAPE_JSON quando non trova niente - e la ri-scansione a ogni run tornava.
+            const vuotoConfermato = /^SCRAPE_EMPTY\b/m.test(res.output || "");
+            if ((!m && !vuotoConfermato) || opts.preview) continue;
             rows.push({ scheduledJobId: job.id, title: null, content: "", imageUrl: null, sourceUrl: String(u).slice(0, 1000) });
           }
           // Sostituzione ATOMICA delle righe di QUESTO url: o si rimpiazzano, o si tiene quello
@@ -215,7 +221,7 @@ async function runJob(prisma: PrismaClient, job: any, opts: { preview?: boolean 
         // Il motivo dell'errore in italiano: con urls vuoto NON ci sara' nessuna ri-scansione,
         // quindi promettere "riprovo entro 24 ore" sarebbe falso. Dallo scraping si tiene solo
         // la parte dopo SCRAPE_ERR (il messaggio dell'eccezione Playwright), su una riga sola.
-        const dettaglio = ((lastOut.match(/SCRAPE_ERR (.+)/) || [])[1] || lastOut).replace(/\s+/g, " ").trim().slice(0, 200);
+        const dettaglio = ((lastOut.match(/SCRAPE_(?:ERR|EMPTY) (.+)/) || [])[1] || lastOut).replace(/\s+/g, " ").trim().slice(0, 200);
         throw new Error(
           urls.length === 0
             ? "Nessun indirizzo del sito configurato per questa pubblicazione: reinseriscilo dal pannello."

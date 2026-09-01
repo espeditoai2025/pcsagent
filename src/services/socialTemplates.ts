@@ -649,7 +649,10 @@ for t, p_ in texts[:25]:
     items.append({"title": site_title[:120], "content": t[:1200], "imageUrl": img, "sourceUrl": url})
 
 if not items:
-    print("SCRAPE_ERR nessun contenuto utile estratto")
+    # Marcatore DISTINTO da SCRAPE_ERR: qui la scansione e' riuscita, e' la pagina a non avere
+    # contenuti utili. Il server ci scrive il segnaposto (esito permanente), mentre su un
+    # SCRAPE_ERR - timeout di navigazione, container ucciso - ritenta subito.
+    print("SCRAPE_EMPTY nessun contenuto utile estratto")
     raise SystemExit(1)
 
 print("SCRAPE_JSON " + json.dumps(items))

@@ -294,12 +294,42 @@ Il token è GIÀ configurato e l'utente può amministrare PIÙ pagine.
     // scheduler): lanciare lo script in modalita' WEBSITE senza contenuto pubblicherebbe sulla
     // pagina vera un post con la didascalia generica di ripiego, e la chat direbbe pure
     // "pubblicato". Meglio spiegare che serve la pubblicazione programmata.
+    // Se l'utente ha scritto LUI il testo del post, il sito e' solo citato dentro al testo e non
+    // e' una fonte dati: si pubblica quel testo. NON vale se il testo contiene segnaposto tipo
+    // {titolo}: quello e' un template trascinato da un turno precedente della conversazione (al
+    // router passa tutta la storia), e finirebbe sulla pagina con le graffe in chiaro.
+    const testoUtente = (parsed.captionTemplate || "").trim();
+    if (parsed.sourceType === "WEBSITE" && testoUtente && !/\{[^}]+\}/.test(testoUtente)) {
+      parsed.sourceType = "TEXT";
+    }
     if (parsed.sourceType === "WEBSITE") {
+      // Se una pubblicazione dallo STESSO sito per questa pagina c'e' gia', si rimanda a quella:
+      // il ramo SCHEDULE non ne creerebbe una seconda, ma suggerirla sarebbe comunque sbagliato.
+      // Il confronto include sourceRef normalizzato: un test su un sito DIVERSO non deve essere
+      // respinto indicando il job di un altro sito.
+      const normUrl = (u: string) => String(u).slice(0, 1000).trim().toLowerCase().replace(/^https?:\/\//, "").replace(/\/+$/, "");
+      const candidati = await prisma.scheduledJob.findMany({
+        where: { userId, fbPageId: target.id, sourceType: "WEBSITE" },
+        orderBy: { createdAt: "desc" },
+      });
+      const gia = parsed.sourceRef ? candidati.find((j) => normUrl(j.sourceRef) === normUrl(parsed.sourceRef)) : candidati[0];
+      // Stato prima dell'orario: per un job in pausa la "prossima esecuzione" e' una data che
+      // non arrivera' mai (il pannello mette PAUSED senza toccare nextRunAt).
+      const quando = !gia
+        ? ""
+        : gia.status !== "ACTIVE"
+          ? ` — al momento è in pausa (stato: ${gia.status}), riattivala dalla sua scheda`
+          : gia.nextRunAt
+            ? `, prossima esecuzione il ${new Date(gia.nextRunAt).toLocaleString("it-IT", { timeZone: "Europe/Rome", dateStyle: "short", timeStyle: "short" })}`
+            : "";
       return {
-        finalResult:
-          `Per pubblicare **dal sito** devo prima leggerlo, e la scansione la fa la pubblicazione programmata (non il test immediato): un test ora uscirebbe con un testo generico.\n\n` +
-          `Dimmi quando pubblicare — es. _"ogni giorno alle 9 pubblica dal sito ${parsed.sourceRef || "www.tuosito.it"} sulla pagina ${target.name}"_ — e alla prima esecuzione leggo il sito e genero i post.\n\n` +
-          `Se vuoi vedere prima com'è il risultato, usa **Anteprima** nella scheda della pubblicazione dal pannello: mostra testo e immagine senza pubblicare niente.`,
+        finalResult: gia
+          ? `Per pubblicare **dal sito** devo prima leggerlo, e la scansione la fa la pubblicazione programmata: un test immediato uscirebbe con un testo generico.\n\n` +
+            `Su **${target.name}** la pubblicazione da questo sito **esiste già**: "${gia.name}"${quando}. Non ne creo una seconda, altrimenti uscirebbero due post.\n\n` +
+            `Per vedere subito com'è il risultato, apri *Profilo → Agente Social*, trova quella scheda e premi **👁 Anteprima**: mostra testo e immagine senza pubblicare niente.`
+          : `Per pubblicare **dal sito** devo prima leggerlo, e la scansione la fa la pubblicazione programmata (non il test immediato): un test ora uscirebbe con un testo generico.\n\n` +
+            `Dimmi quando pubblicare — es. _"ogni giorno alle 9 pubblica dal sito ${parsed.sourceRef || "www.tuosito.it"} sulla pagina ${target.name}"_ — e alla prima esecuzione leggo il sito e genero i post.\n\n` +
+            `Appena creata, nella sua scheda in *Profilo → Agente Social* trovi il pulsante **👁 Anteprima**: mostra testo e immagine senza pubblicare niente.`,
       };
     }
     try {
@@ -367,6 +397,33 @@ Il token è GIÀ configurato e l'utente può amministrare PIÙ pagine.
       update: { connectionId: target.connectionId },
       create: { userId, connectionId: target.connectionId, fbPageId: target.id, fbPageName: target.name, name: target.name },
     });
+    // Anti-doppione: stessa pagina + stessa fonte + stessa frequenza = la pubblicazione c'e'
+    // gia'. Crearne una seconda farebbe uscire due post identici alla stessa ora, e dalla chat
+    // e' un errore facilissimo (basta ripetere la richiesta perche' non si e' visto l'esito).
+    const doppione = await prisma.scheduledJob.findFirst({
+      where: {
+        userId,
+        fbPageId: target.id,
+        sourceType: parsed.sourceType,
+        sourceRef: parsed.sourceRef || "",
+        cronExpression: parsed.cronExpression,
+      },
+    });
+    if (doppione) {
+      // Nessun filtro sullo stato: se il job esiste ma e' in pausa, il doppione resta un
+      // doppione (e la cosa utile e' dirgli che c'e' e com'e' messo, non crearne un altro).
+      const quando =
+        doppione.status !== "ACTIVE"
+          ? `in pausa (stato: ${doppione.status})`
+          : doppione.nextRunAt
+            ? "prossima esecuzione: " + new Date(doppione.nextRunAt).toLocaleString("it-IT", { timeZone: "Europe/Rome", dateStyle: "short", timeStyle: "short" })
+            : "prossima esecuzione non ancora calcolata";
+      return {
+        finalResult:
+          `Questa pubblicazione **esiste già**: "${doppione.name}" su **${target.name}**, stessa fonte e stessa frequenza (${quando}).\n\n` +
+          `Non ne creo una seconda, altrimenti uscirebbero due post uguali alla stessa ora. Se vuoi cambiare orario o fonte, dimmelo e modifico quella esistente; per vederne il risultato usa **👁 Anteprima** nella sua scheda in *Profilo → Agente Social*.`,
+      };
+    }
     const job = await prisma.scheduledJob.create({
       data: {
         userId,
