@@ -156,9 +156,17 @@ async function runJob(prisma: PrismaClient, job: any, opts: { preview?: boolean 
         e.ids.push(x.id);
         perUrl.set(k, e);
       }
+      // MIGRAZIONE UNA TANTUM: i contenuti salvati prima del 2026-09-01 portano gli abbinamenti
+      // testo-immagine della vecchia logica, che dava a ogni testo la PRIMA immagine del
+      // contenitore - cioe' quasi sempre la foto della home. Quelle righe restano congelate
+      // (il sito si rilegge solo se cambiano gli URL), quindi vanno rilette una volta.
+      // Si spegne da sola: dopo la ri-scansione i contenuti sono nuovi. Rimuovibile in futuro.
+      const ABBINAMENTO_CORRETTO_DAL = Date.parse("2026-09-01T00:00:00Z");
       const daScansionare = urls.filter((u) => {
         const e = perUrl.get(normUrl(u));
-        return !e || (e.utili === 0 && adesso - e.ultimo > RISCANSIONE_MS);
+        if (!e) return true;
+        if (e.utili === 0) return adesso - e.ultimo > RISCANSIONE_MS;
+        return e.ultimo < ABBINAMENTO_CORRETTO_DAL;
       });
 
       let lastOut = "";
@@ -234,13 +242,33 @@ async function runJob(prisma: PrismaClient, job: any, opts: { preview?: boolean 
       env.WEB_TITLE = it.title || "";
       env.WEB_CONTENT = it.content || "";
       env.WEB_IMAGE = it.imageUrl || "";
-      // Conta le immagini DISTINTE e valide del sito (no logo). Se sono poche (<=1, es. solo
-      // la copertina) e l'AI è attiva, lo script genera un'immagine AI diversa per ogni post.
       const isLogoUrl = (u: string) => /logo|favicon|icon|sprite|brand/i.test(u || "");
-      const distinctImgs = new Set(
-        usable.map((x) => (x.imageUrl || "").trim()).filter((u) => /^https?:\/\//i.test(u) && !isLogoUrl(u))
-      );
-      env.FEW_SITE_IMAGES = distinctImgs.size <= 1 ? "true" : "false";
+      const valida = (u: string) => /^https?:\/\//i.test(u) && !isLogoUrl(u);
+      // Quante volte ogni immagine si ripete fra i contenuti del sito.
+      const quante = new Map<string, number>();
+      for (const x of usable) {
+        const u = (x.imageUrl || "").trim();
+        if (valida(u)) quante.set(u, (quante.get(u) || 0) + 1);
+      }
+      // Se il sito ha UNA sola immagine valida (es. solo la copertina) e l'AI e' attiva, lo
+      // script genera un'immagine diversa per ogni post invece di ripetere quella.
+      env.FEW_SITE_IMAGES = quante.size <= 1 ? "true" : "false";
+      // Non basta contare le immagini DISTINTE: se il sito ne ha sei ma una sta su meta' dei
+      // contenuti, la regola qui sopra si spegne e quasi tutti i post escono con la stessa foto.
+      // Quindi si guarda la foto di QUESTO contenuto: se e' condivisa da piu' di un quarto dei
+      // contenuti, la si toglie e si lascia decidere allo script (pool caricato, poi AI).
+      // Solo se un'alternativa c'e' davvero: un post senza immagine sarebbe peggio.
+      // La soglia e' un QUARTO e non meta' perche' misurata su un sito reale (gobus.it): li' la
+      // foto ripetuta stava al 48% con la vecchia logica di abbinamento e al 52% con la nuova,
+      // cioe' a cavallo del 50%. Una soglia dentro il rumore dei dati non decide niente.
+      // Al 25% restano intatte le foto usate da pochi contenuti, che la varieta' ce l'hanno.
+      const suaImg = (it.imageUrl || "").trim();
+      const dominante = usable.length >= 4 && valida(suaImg) && (quante.get(suaImg) || 0) / usable.length > 0.25;
+      const alternativa = Boolean(sa?.autoImage) || (sa?.imagePool || []).length > 0;
+      if (dominante && alternativa) {
+        console.log(`[Scheduler] Job ${job.id}: immagine ripetuta su ${quante.get(suaImg)}/${usable.length} contenuti, la sostituisco.`);
+        env.WEB_IMAGE = "";
+      }
     }
 
     if (opts.preview) env.PREVIEW = "true";
