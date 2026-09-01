@@ -156,17 +156,15 @@ async function runJob(prisma: PrismaClient, job: any, opts: { preview?: boolean 
         e.ids.push(x.id);
         perUrl.set(k, e);
       }
-      // MIGRAZIONE UNA TANTUM: i contenuti salvati prima del 2026-09-01 portano gli abbinamenti
-      // testo-immagine della vecchia logica, che dava a ogni testo la PRIMA immagine del
-      // contenitore - cioe' quasi sempre la foto della home. Quelle righe restano congelate
-      // (il sito si rilegge solo se cambiano gli URL), quindi vanno rilette una volta.
-      // Si spegne da sola: dopo la ri-scansione i contenuti sono nuovi. Rimuovibile in futuro.
-      const ABBINAMENTO_CORRETTO_DAL = Date.parse("2026-09-01T00:00:00Z");
+      // Un URL con contenuti utilizzabili NON viene mai ri-scansionato da solo: il sito si
+      // rilegge quando l'elenco degli indirizzi cambia. Era stata provata una ri-lettura
+      // automatica dei contenuti vecchi, ma apriva su TUTTI i job insieme percorsi distruttivi
+      // (corse fra anteprima e cron, sostituzioni con pagine di manutenzione, ri-scansioni a
+      // ogni run): per aggiornare i contenuti di un job basta cambiargli l'indirizzo dal
+      // pannello, che e' un'azione mirata e reversibile.
       const daScansionare = urls.filter((u) => {
         const e = perUrl.get(normUrl(u));
-        if (!e) return true;
-        if (e.utili === 0) return adesso - e.ultimo > RISCANSIONE_MS;
-        return e.ultimo < ABBINAMENTO_CORRETTO_DAL;
+        return !e || (e.utili === 0 && adesso - e.ultimo > RISCANSIONE_MS);
       });
 
       let lastOut = "";
@@ -201,7 +199,6 @@ async function runJob(prisma: PrismaClient, job: any, opts: { preview?: boolean 
           // essere ritentati subito, non fra 24 ore. Nemmeno l'anteprima lo scrive: un clic su
           // "Anteprima" mentre il sito e' lento non deve mettere in pausa il job per un giorno.
           const esistenti = perUrl.get(normUrl(u));
-          const utiliPrima = esistenti?.utili || 0;
           if (rows.length === 0) {
             // Il segnaposto va scritto quando la scansione e' RIUSCITA ma la pagina non ha
             // contenuti: lo script lo dice con SCRAPE_EMPTY. Un SCRAPE_ERR (timeout di
@@ -209,37 +206,9 @@ async function runJob(prisma: PrismaClient, job: any, opts: { preview?: boolean 
             // Senza questo controllo il segnaposto non veniva mai scritto - lo script non
             // stampa SCRAPE_JSON quando non trova niente - e la ri-scansione a ogni run tornava.
             const vuotoConfermato = /^SCRAPE_EMPTY\b/m.test(res.output || "");
-            if ((!m && !vuotoConfermato) || opts.preview) {
-              // Fallimento TRANSITORIO durante la ri-lettura una tantum di un URL che i
-              // contenuti ce li ha: senza toccare la data la condizione resterebbe vera e il
-              // sito verrebbe ri-scansionato a OGNI esecuzione, per sempre. Si rinuncia alla
-              // ri-lettura (restano gli abbinamenti vecchi, come oggi in produzione): per
-              // forzarla basta cambiare l'indirizzo dal pannello.
-              if (utiliPrima > 0 && !opts.preview) {
-                await prisma.scrapedItem.updateMany({ where: { id: { in: esistenti!.ids } }, data: { createdAt: new Date() } });
-              }
-              continue;
-            }
-            if (utiliPrima === 0) {
-              rows.push({ scheduledJobId: job.id, title: null, content: "", imageUrl: null, sourceUrl: String(u).slice(0, 1000) });
-            }
+            if ((!m && !vuotoConfermato) || opts.preview) continue;
+            rows.push({ scheduledJobId: job.id, title: null, content: "", imageUrl: null, sourceUrl: String(u).slice(0, 1000) });
           }
-          // MAI scambiare contenuti che funzionano con un raccolto molto piu' povero. La
-          // ri-lettura una tantum tocca anche gli URL che i contenuti ce li avevano, e una
-          // pagina di manutenzione o un interstiziale anti-bot NON sono vuoti: hanno il loro
-          // blocco di testo, quindi controllare solo "zero righe" non basta. Senza questa
-          // guardia i 25 contenuti buoni verrebbero sostituiti da "Stiamo effettuando alcuni
-          // interventi tecnici", e per sempre: le righe nuove nascono con la data di oggi,
-          // quindi la ri-lettura non riparte piu'.
-          // Si tiene quello che c'e' e si aggiorna la data ("ricontrollato ora"), altrimenti la
-          // ri-lettura ripartirebbe a ogni esecuzione. Un sito che si e' davvero ridotto resta
-          // sui contenuti vecchi finche' l'utente non cambia l'indirizzo dal pannello.
-          if (utiliPrima > 0 && rows.length < Math.max(3, Math.ceil(utiliPrima * 0.5))) {
-            console.log(`[Scheduler] Job ${job.id}: ${u} ha reso ${rows.length} contenuti contro i ${utiliPrima} salvati, tengo quelli buoni.`);
-            await prisma.scrapedItem.updateMany({ where: { id: { in: esistenti!.ids } }, data: { createdAt: new Date() } });
-            continue;
-          }
-          if (rows.length === 0) continue;
           // Sostituzione ATOMICA delle righe di QUESTO url: o si rimpiazzano, o si tiene quello
           // che c'era. Cancellando in anticipo, un errore dello scraping o della scrittura
           // lasciava l'URL senza nessuna riga e il difetto della ri-scansione infinita tornava.
