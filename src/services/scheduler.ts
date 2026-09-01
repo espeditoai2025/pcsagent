@@ -118,7 +118,7 @@ async function runJob(prisma: PrismaClient, job: any, opts: { preview?: boolean 
           return true;
         })
         .slice(0, 5);
-      let items = await prisma.scrapedItem.findMany({ where: { scheduledJobId: job.id }, orderBy: { createdAt: "asc" } });
+      let items = await prisma.scrapedItem.findMany({ where: { scheduledJobId: job.id }, orderBy: [{ createdAt: "asc" }, { id: "asc" }] });
       // Le righe con content VUOTO sono SEGNAPOSTO: registrano che un URL e' gia' stato
       // scansionato anche quando non ha prodotto contenuti. Non si pubblicano mai.
       const usableOf = (rows: typeof items) => rows.filter((x) => (x.content || "").trim());
@@ -233,7 +233,7 @@ async function runJob(prisma: PrismaClient, job: any, opts: { preview?: boolean 
             prisma.scrapedItem.createMany({ data: rows }),
           ]);
         }
-        items = await prisma.scrapedItem.findMany({ where: { scheduledJobId: job.id }, orderBy: { createdAt: "asc" } });
+        items = await prisma.scrapedItem.findMany({ where: { scheduledJobId: job.id }, orderBy: [{ createdAt: "asc" }, { id: "asc" }] });
       }
 
       const usable = usableOf(items);
