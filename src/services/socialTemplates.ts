@@ -291,7 +291,10 @@ if source_type == "WEBSITE":
     if biz_website: footer.append(f"🌐 {biz_website}")
     if footer:
         caption = caption.rstrip() + "\n\n" + "\n".join(footer)
-    img_url, img_file = resolve_image(web_image, web_title or web_content)
+    # Soggetto per l'eventuale immagine AI: il CONTENUTO, non il titolo. Lo scraper mette in
+    # title il titolo del SITO, identico per tutti i contenuti: usarlo darebbe a ogni post lo
+    # stesso prompt e quindi immagini tutte uguali, che e' il problema che si vuole evitare.
+    img_url, img_file = resolve_image(web_image, web_content or web_title)
     if preview_mode:
         emit_preview(caption, img_url, img_file)
         print(f"AI_USAGE {USAGE['p']} {USAGE['c']} {ai_model}")
