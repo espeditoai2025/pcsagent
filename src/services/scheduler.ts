@@ -200,6 +200,8 @@ async function runJob(prisma: PrismaClient, job: any, opts: { preview?: boolean 
           // un timeout di Playwright o un guasto del container sono transitori e devono poter
           // essere ritentati subito, non fra 24 ore. Nemmeno l'anteprima lo scrive: un clic su
           // "Anteprima" mentre il sito e' lento non deve mettere in pausa il job per un giorno.
+          const esistenti = perUrl.get(normUrl(u));
+          const utiliPrima = esistenti?.utili || 0;
           if (rows.length === 0) {
             // Il segnaposto va scritto quando la scansione e' RIUSCITA ma la pagina non ha
             // contenuti: lo script lo dice con SCRAPE_EMPTY. Un SCRAPE_ERR (timeout di
@@ -207,31 +209,52 @@ async function runJob(prisma: PrismaClient, job: any, opts: { preview?: boolean 
             // Senza questo controllo il segnaposto non veniva mai scritto - lo script non
             // stampa SCRAPE_JSON quando non trova niente - e la ri-scansione a ogni run tornava.
             const vuotoConfermato = /^SCRAPE_EMPTY\b/m.test(res.output || "");
-            if ((!m && !vuotoConfermato) || opts.preview) continue;
-            // MAI scambiare contenuti buoni con un segnaposto. La ri-lettura una tantum tocca
-            // anche gli URL che i contenuti ce li avevano: se oggi il sito non ne da' (pagina di
-            // manutenzione, interstiziale anti-bot verso l'IP del VPS, redesign in JS) la
-            // transazione qui sotto cancellerebbe righe funzionanti in cambio di niente, e il
-            // job smetterebbe di pubblicare. Si tiene quello che c'e' e si aggiorna la data
-            // delle righe esistenti ("ricontrollate ora"), altrimenti la ri-lettura ripartirebbe
-            // a ogni esecuzione.
-            const esistenti = perUrl.get(normUrl(u));
-            if ((esistenti?.utili || 0) > 0) {
-              await prisma.scrapedItem.updateMany({ where: { id: { in: esistenti!.ids } }, data: { createdAt: new Date() } });
+            if ((!m && !vuotoConfermato) || opts.preview) {
+              // Fallimento TRANSITORIO durante la ri-lettura una tantum di un URL che i
+              // contenuti ce li ha: senza toccare la data la condizione resterebbe vera e il
+              // sito verrebbe ri-scansionato a OGNI esecuzione, per sempre. Si rinuncia alla
+              // ri-lettura (restano gli abbinamenti vecchi, come oggi in produzione): per
+              // forzarla basta cambiare l'indirizzo dal pannello.
+              if (utiliPrima > 0 && !opts.preview) {
+                await prisma.scrapedItem.updateMany({ where: { id: { in: esistenti!.ids } }, data: { createdAt: new Date() } });
+              }
               continue;
             }
-            rows.push({ scheduledJobId: job.id, title: null, content: "", imageUrl: null, sourceUrl: String(u).slice(0, 1000) });
+            if (utiliPrima === 0) {
+              rows.push({ scheduledJobId: job.id, title: null, content: "", imageUrl: null, sourceUrl: String(u).slice(0, 1000) });
+            }
           }
+          // MAI scambiare contenuti che funzionano con un raccolto molto piu' povero. La
+          // ri-lettura una tantum tocca anche gli URL che i contenuti ce li avevano, e una
+          // pagina di manutenzione o un interstiziale anti-bot NON sono vuoti: hanno il loro
+          // blocco di testo, quindi controllare solo "zero righe" non basta. Senza questa
+          // guardia i 25 contenuti buoni verrebbero sostituiti da "Stiamo effettuando alcuni
+          // interventi tecnici", e per sempre: le righe nuove nascono con la data di oggi,
+          // quindi la ri-lettura non riparte piu'.
+          // Si tiene quello che c'e' e si aggiorna la data ("ricontrollato ora"), altrimenti la
+          // ri-lettura ripartirebbe a ogni esecuzione. Un sito che si e' davvero ridotto resta
+          // sui contenuti vecchi finche' l'utente non cambia l'indirizzo dal pannello.
+          if (utiliPrima > 0 && rows.length < Math.max(3, Math.ceil(utiliPrima * 0.5))) {
+            console.log(`[Scheduler] Job ${job.id}: ${u} ha reso ${rows.length} contenuti contro i ${utiliPrima} salvati, tengo quelli buoni.`);
+            await prisma.scrapedItem.updateMany({ where: { id: { in: esistenti!.ids } }, data: { createdAt: new Date() } });
+            continue;
+          }
+          if (rows.length === 0) continue;
           // Sostituzione ATOMICA delle righe di QUESTO url: o si rimpiazzano, o si tiene quello
           // che c'era. Cancellando in anticipo, un errore dello scraping o della scrittura
           // lasciava l'URL senza nessuna riga e il difetto della ri-scansione infinita tornava.
-          // Il createMany resta FUORI dal catch del JSON: un errore del DB non e' un problema
-          // di scraping e non va mascherato da "nessun contenuto trovato".
-          const vecchi = perUrl.get(normUrl(u))?.ids || [];
-          await prisma.$transaction([
-            ...(vecchi.length > 0 ? [prisma.scrapedItem.deleteMany({ where: { id: { in: vecchi } } })] : []),
-            prisma.scrapedItem.createMany({ data: rows }),
-          ]);
+          // La cancellazione include il sourceUrl oltre agli id letti a inizio esecuzione: se
+          // un'altra esecuzione dello stesso job ha gia' riscritto le righe, quegli id non
+          // esistono piu' e senza questo si accumulerebbero contenuti doppi.
+          await prisma.$transaction(async (tx) => {
+            await tx.scrapedItem.deleteMany({
+              where: {
+                scheduledJobId: job.id,
+                OR: [{ id: { in: esistenti?.ids || [] } }, { sourceUrl: { in: [...new Set(rows.map((r) => r.sourceUrl))] } }],
+              },
+            });
+            await tx.scrapedItem.createMany({ data: rows });
+          });
         }
         items = await prisma.scrapedItem.findMany({ where: { scheduledJobId: job.id }, orderBy: [{ createdAt: "asc" }, { id: "asc" }] });
       }
@@ -264,21 +287,38 @@ async function runJob(prisma: PrismaClient, job: any, opts: { preview?: boolean 
       }
       // Se il sito ha UNA sola immagine valida (es. solo la copertina) e l'AI e' attiva, lo
       // script genera un'immagine diversa per ogni post invece di ripetere quella.
-      env.FEW_SITE_IMAGES = quante.size <= 1 ? "true" : "false";
+      // Mai in anteprima: li' la generazione costerebbe 10.000 crediti a clic per un'immagine
+      // che viene buttata e che comunque non sarebbe quella del post vero.
+      env.FEW_SITE_IMAGES = quante.size <= 1 && !opts.preview ? "true" : "false";
       // Non basta contare le immagini DISTINTE: se il sito ne ha sei ma una sta su meta' dei
       // contenuti, la regola qui sopra si spegne e quasi tutti i post escono con la stessa foto.
-      // Quindi si guarda la foto di QUESTO contenuto: se e' condivisa da piu' di un quarto dei
-      // contenuti, la si toglie e si lascia decidere allo script (pool caricato, poi AI).
-      // Solo se un'alternativa c'e' davvero: un post senza immagine sarebbe peggio.
-      // La soglia e' un QUARTO e non meta' perche' misurata su un sito reale (gobus.it): li' la
-      // foto ripetuta stava al 48% con la vecchia logica di abbinamento e al 52% con la nuova,
-      // cioe' a cavallo del 50%. Una soglia dentro il rumore dei dati non decide niente.
-      // Al 25% restano intatte le foto usate da pochi contenuti, che la varieta' ce l'hanno.
+      // Quindi si guarda la foto di QUESTO contenuto e la si toglie se si ripete troppo,
+      // lasciando decidere allo script (pool caricato, poi AI).
+      // La dominanza si misura DENTRO la pagina da cui viene il contenuto, non sull'unione di
+      // tutti gli URL del job (sourceRef ne accetta 5): sommandoli, le percentuali si diluiscono
+      // e la regola si spegnerebbe pur restando ogni pagina dominata dalla propria foto.
+      const stessaPagina = usable.filter((x) => normUrl(x.sourceUrl || "") === normUrl(it.sourceUrl || ""));
+      const quantePagina = new Map<string, number>();
+      for (const x of stessaPagina) {
+        const u = (x.imageUrl || "").trim();
+        if (valida(u)) quantePagina.set(u, (quantePagina.get(u) || 0) + 1);
+      }
       const suaImg = (it.imageUrl || "").trim();
-      const dominante = usable.length >= 4 && valida(suaImg) && (quante.get(suaImg) || 0) / usable.length > 0.25;
-      // L'alternativa deve aggiungere VARIETA', non solo esistere: un pool di UNA sola immagine
-      // sostituirebbe una foto ripetuta con un'altra foto ripetuta, per giunta meno pertinente.
-      const alternativa = Boolean(sa?.autoImage) || (sa?.imagePool || []).length >= 2;
+      const ripetizioni = quantePagina.get(suaImg) || 0;
+      // Servono DUE condizioni insieme: almeno 3 ripetizioni in assoluto e piu' di un quarto
+      // della pagina. La sola frazione non basta: su una pagina con 4-6 contenuti un'immagine
+      // usata appena 2 volte supererebbe il 25% e verrebbe buttata, facendo generare un'immagine
+      // AI (10.000 crediti) a ogni esecuzione per sempre.
+      // Il quarto e non la meta' perche' misurato su un sito reale (gobus.it): li' la foto
+      // ripetuta sta al 48% con la vecchia logica di abbinamento e al 52% con la nuova, cioe' a
+      // cavallo del 50%. Una soglia dentro il rumore dei dati non decide niente.
+      const dominante = stessaPagina.length >= 4 && valida(suaImg) && ripetizioni >= 3 && ripetizioni / stessaPagina.length > 0.25;
+      // L'alternativa deve aggiungere VARIETA', non solo esistere. Attenzione all'ordine della
+      // cascata nello script: il POOL viene PRIMA dell'AI, quindi con un pool di una sola
+      // immagine l'AI non verrebbe mai chiamata e tutti i post dominanti finirebbero con quella
+      // stessa foto - una ripetizione al posto di un'altra, per giunta meno pertinente.
+      const poolN = (sa?.imagePool || []).length;
+      const alternativa = poolN >= 2 || (Boolean(sa?.autoImage) && poolN === 0);
       // Non in ANTEPRIMA: li' lo script genererebbe davvero l'immagine (10.000 crediti a clic)
       // per poi buttarla, e mostrerebbe comunque un'immagine diversa da quella del post vero.
       if (dominante && alternativa && !opts.preview) {
@@ -420,8 +460,21 @@ async function runJob(prisma: PrismaClient, job: any, opts: { preview?: boolean 
 
 // Esegue un job in modalita ANTEPRIMA: genera testo+immagine SENZA pubblicare.
 export async function previewJob(prisma: PrismaClient, job: any): Promise<{ caption: string; image: string }> {
-  const r = await runJob(prisma, job, { preview: true });
-  return r || { caption: "", image: "" };
+  // L'anteprima passa dallo STESSO set "running" delle esecuzioni programmate: anche lei
+  // scansiona il sito e riscrive le righe ScrapedItem, e due esecuzioni sovrapposte (anteprima
+  // + run del cron, oppure anteprima + tasto Test) leggono la stessa lista di righe da
+  // cancellare: la seconda transazione non trova piu' quegli id, non cancella niente e RADDOPPIA
+  // i contenuti. Da li' in poi ogni contenuto uscirebbe due volte a ogni giro.
+  if (running.has(job.id)) {
+    throw new Error("Questa pubblicazione e' gia' in esecuzione: riprova fra qualche secondo.");
+  }
+  running.add(job.id);
+  try {
+    const r = await runJob(prisma, job, { preview: true });
+    return r || { caption: "", image: "" };
+  } finally {
+    running.delete(job.id);
+  }
 }
 
 async function tick(prisma: PrismaClient): Promise<void> {
