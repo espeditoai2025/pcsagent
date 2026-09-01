@@ -216,14 +216,22 @@ def resolve_image(content_image_url, subject):
     if content_image_url and str(content_image_url).lower().startswith("http") and not _looks_logo(content_image_url):
         return content_image_url, None
     if pool_files:
-        fn = pool_files[pool_index % len(pool_files)]
-        p = os.path.join("/app/data", fn)
-        if os.path.exists(p):
-            return None, p
+        # Si scorre TUTTO il pool a partire dall'indice di rotazione: fermarsi al primo nome
+        # faceva cadere il ramo se proprio quel file non era piu' sul disco.
+        for k in range(len(pool_files)):
+            p = os.path.join("/app/data", pool_files[(pool_index + k) % len(pool_files)])
+            if os.path.exists(p):
+                return None, p
     if auto_image:
         p = _gen_ai_image(subject)
         if p:
             return None, p
+    # ULTIMA SPIAGGIA: la foto che il server aveva tolto perche' ripetuta su meta' del sito.
+    # Ci si arriva solo quando pool e AI non hanno prodotto niente (chiave assente, 429,
+    # timeout, file spariti): meglio ripetere un'immagine che pubblicare un post senza.
+    fallback = os.environ.get("WEB_IMAGE_FALLBACK", "").strip()
+    if fallback and fallback.lower().startswith("http") and not _looks_logo(fallback):
+        return fallback, None
     return None, None
 
 def emit_preview(caption, image_url=None, image_file=None):

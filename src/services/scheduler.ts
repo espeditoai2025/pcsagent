@@ -208,6 +208,18 @@ async function runJob(prisma: PrismaClient, job: any, opts: { preview?: boolean 
             // stampa SCRAPE_JSON quando non trova niente - e la ri-scansione a ogni run tornava.
             const vuotoConfermato = /^SCRAPE_EMPTY\b/m.test(res.output || "");
             if ((!m && !vuotoConfermato) || opts.preview) continue;
+            // MAI scambiare contenuti buoni con un segnaposto. La ri-lettura una tantum tocca
+            // anche gli URL che i contenuti ce li avevano: se oggi il sito non ne da' (pagina di
+            // manutenzione, interstiziale anti-bot verso l'IP del VPS, redesign in JS) la
+            // transazione qui sotto cancellerebbe righe funzionanti in cambio di niente, e il
+            // job smetterebbe di pubblicare. Si tiene quello che c'e' e si aggiorna la data
+            // delle righe esistenti ("ricontrollate ora"), altrimenti la ri-lettura ripartirebbe
+            // a ogni esecuzione.
+            const esistenti = perUrl.get(normUrl(u));
+            if ((esistenti?.utili || 0) > 0) {
+              await prisma.scrapedItem.updateMany({ where: { id: { in: esistenti!.ids } }, data: { createdAt: new Date() } });
+              continue;
+            }
             rows.push({ scheduledJobId: job.id, title: null, content: "", imageUrl: null, sourceUrl: String(u).slice(0, 1000) });
           }
           // Sostituzione ATOMICA delle righe di QUESTO url: o si rimpiazzano, o si tiene quello
@@ -264,10 +276,19 @@ async function runJob(prisma: PrismaClient, job: any, opts: { preview?: boolean 
       // Al 25% restano intatte le foto usate da pochi contenuti, che la varieta' ce l'hanno.
       const suaImg = (it.imageUrl || "").trim();
       const dominante = usable.length >= 4 && valida(suaImg) && (quante.get(suaImg) || 0) / usable.length > 0.25;
-      const alternativa = Boolean(sa?.autoImage) || (sa?.imagePool || []).length > 0;
-      if (dominante && alternativa) {
+      // L'alternativa deve aggiungere VARIETA', non solo esistere: un pool di UNA sola immagine
+      // sostituirebbe una foto ripetuta con un'altra foto ripetuta, per giunta meno pertinente.
+      const alternativa = Boolean(sa?.autoImage) || (sa?.imagePool || []).length >= 2;
+      // Non in ANTEPRIMA: li' lo script genererebbe davvero l'immagine (10.000 crediti a clic)
+      // per poi buttarla, e mostrerebbe comunque un'immagine diversa da quella del post vero.
+      if (dominante && alternativa && !opts.preview) {
         console.log(`[Scheduler] Job ${job.id}: immagine ripetuta su ${quante.get(suaImg)}/${usable.length} contenuti, la sostituisco.`);
         env.WEB_IMAGE = "";
+        // ULTIMA SPIAGGIA. "alternativa" dice che il pool o l'AI sono CONFIGURATI, non che
+        // produrranno davvero un'immagine: la generazione fallisce con chiave assente, 429,
+        // 5xx, timeout, e un file del pool puo' non esistere piu' sul disco. Senza questa
+        // riga, in quei casi il post uscirebbe SENZA immagine (peggio della foto ripetuta).
+        env.WEB_IMAGE_FALLBACK = suaImg;
       }
     }
 
